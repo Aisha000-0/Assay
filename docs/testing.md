@@ -1,5 +1,9 @@
 # Package-level testing guide
 
+Go tests require Go 1.26.9 or later. The `go` directive in `go.mod` is
+the source of truth for the minimum version. CI also runs the attestation
+golden-file tests on Go 1.26.x and 1.27.x.
+
 Assay's tests come in three styles. They are not interchangeable: each is the
 cheapest way to prove one kind of property, and reaching for the wrong one
 produces a test that looks like it verifies something and does not. This guide

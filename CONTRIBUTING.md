@@ -49,6 +49,9 @@ the reason to have a check at all is that it knows when that is fine.
 
 ## Development
 
+Go development requires Go 1.26.9 or later. The `go` directive in
+`go.mod` is the source of truth for the minimum version.
+
 ```sh
 make test     # tests with -race
 make lint     # golangci-lint
