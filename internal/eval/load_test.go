@@ -128,6 +128,19 @@ func TestLoadSubjectDistinguishesAbsentFromErrored(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:  "toml transport error",
+			extra: map[string]string{"stellar.toml.err": "sep1: fetch https://redirect.example/.well-known/stellar.toml: cross-host redirect from redirect.example to other.example\n"},
+			check: func(t *testing.T, s *mechanics.Subject) {
+				if s.Toml != nil {
+					t.Error("toml errored but Toml is non-nil")
+				}
+				const want = "sep1: fetch https://redirect.example/.well-known/stellar.toml: cross-host redirect from redirect.example to other.example"
+				if s.TomlErr != want {
+					t.Errorf("TomlErr = %q, want %q", s.TomlErr, want)
+				}
+			},
+		},
 	}
 
 	for _, tc := range cases {
