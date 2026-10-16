@@ -36,31 +36,37 @@ For a complete breakdown of every party you are trusting (issuer, attester key,
 Horizon, and reputation providers) and the consequences if each is dishonest or
 wrong, see [trust.md](trust.md).
 
-## 1. Declare the interface
+## 1. Depend on the `assay-gate` crate
 
-You do not need a dependency on Assay. Declare the parts you call:
+You do not need a dependency on the registry contract, but you do not need to
+copy-paste its interface either. The parts you call — the `Safety` type, the
+`SafetyRegistry` client, the mechanic bit constants and a policy-checking
+helper — ship as a small `no_std` crate in this repository, versioned with
+the registry's ABI (#469):
+
+```toml
+[dependencies]
+assay-gate = { git = "https://github.com/use-assay/Assay", rev = "<revision of the registry build you target>" }
+```
+
+Pin `rev` to the commit of the registry build you are integrating against —
+the same build recorded in [deployment.md](deployment.md) — rather than to a
+branch. The constants in the crate are the registry's ABI, and the Go engine's
+ABI drift test parses the crate and fails the build if its constants ever
+disagree with the registry contract or with `internal/mechanics`, so a pinned
+revision cannot silently renumber a bit under you. Then:
 
 ```rust
-use soroban_sdk::{contractclient, contracttype, Address, BytesN, Env};
-
-/// Field names and types are ABI — they must match the registry exactly,
-/// because a #[contracttype] struct crosses the boundary as a map keyed by
-/// these names.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Safety {
-    pub severity: u32,
-    pub flags: u32,
-    pub evidence_hash: BytesN<32>,
-    pub attested_at: u64,
-}
-
-#[contractclient(name = "SafetyRegistryClient")]
-pub trait SafetyRegistry {
-    fn get_safety(env: Env, asset: Address) -> Option<Safety>;
-    fn is_safe(env: Env, asset: Address, max_severity: u32, max_age_secs: u64) -> bool;
-}
+use assay_gate::{Safety, SafetyRegistryClient, CAPABILITY_MASK,
+    MECH_AUTH_REVOCABLE, MECH_CLAWBACK_ENABLED};
 ```
+
+`Safety` crosses the contract boundary as a map keyed by its field names, so
+its names and types are ABI — which is exactly why they live in one
+drift-tested crate rather than in every gate that copies them. What each bit
+means is in the table below; `CAPABILITY_MASK` selects the three power bits
+and exists because picking "the dangerous bits" by hand is how
+[#26](https://github.com/use-assay/Assay/issues/26) happened.
 
 ## 2. Decide what you are refusing
 
@@ -123,12 +129,12 @@ plenty of assets whose issuers can do nothing to you.
 ## 3. Write the gate
 
 ```rust
-use assay_safety_registry::{CAPABILITY_MASK, MECH_AUTH_REVOCABLE, MECH_CLAWBACK_ENABLED};
+use assay_gate::{CAPABILITY_MASK, MECH_AUTH_REVOCABLE, MECH_CLAWBACK_ENABLED};
 
 /// Powers a custodial balance cannot survive: the freeze and clawback bits
-/// selected through Assay's exported capability mask rather than hand-rolled
-/// from memory. The registry exports CAPABILITY_MASK (all three power bits)
-/// and the policy masks below; picking bits by hand is how #26 happened.
+/// selected through the crate's exported capability mask rather than
+/// hand-rolled from memory. CAPABILITY_MASK is all three power bits;
+/// picking bits by hand is how #26 happened.
 pub const REFUSED_MECHANICS: u32 = MECH_AUTH_REVOCABLE | MECH_CLAWBACK_ENABLED;
 
 /// Documented defaults for the deployed gate. These are not hidden globals;
@@ -170,6 +176,14 @@ The severity check has to be there even though it looks redundant next to the
 mask. Every capability bit does have a severity, so for the assets in the table
 above the mask appears to subsume it — right up to an asset like DOGE whose
 severity comes from somewhere the mask cannot see.
+
+The whole `assert_safe` judgment — staleness, then the ceiling, then the
+mask — is also packaged in the crate as `assay_gate::check_policy`, which
+returns which of the three refusals applies. The example gate in this
+repository uses it (see
+[`contracts/example-gate`](../assay-contracts/contracts/example-gate)); the
+explicit version above stays here because reading the three checks spelled out
+is the fastest way to see why none of them is redundant.
 
 On choosing `MAX_ATTESTATION_AGE`: [freshness.md](freshness.md) measures how
 often issuer flags actually change, names the use classes that need different
