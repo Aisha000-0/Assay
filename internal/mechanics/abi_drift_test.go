@@ -32,20 +32,31 @@ import (
 	"github.com/use-assay/assay/internal/mechanics"
 )
 
-// contractSourcePath resolves the Rust file relative to this test file so the
+// repoRoot resolves the repository root relative to this test file so every
 // check works both from `go test ./...` at the repo root and from a package
 // directory. runtime.Caller is used rather than a hard-coded relative path
 // because Go tests can run from either.
-func contractSourcePath(t *testing.T) string {
+func repoRoot(t *testing.T) string {
 	t.Helper()
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
 	// internal/mechanics/abi_drift_test.go -> repo root
-	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..")
-	return filepath.Join(repoRoot, "assay-contracts", "contracts",
+	return filepath.Join(filepath.Dir(thisFile), "..", "..")
+}
+
+func contractSourcePath(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(repoRoot(t), "assay-contracts", "contracts",
 		"safety-registry", "src", "lib.rs")
+}
+
+// gateCrateSourcePath resolves the integrator crate's source (issue #469).
+func gateCrateSourcePath(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(repoRoot(t), "assay-contracts", "crates",
+		"assay-gate", "src", "lib.rs")
 }
 
 // parseRustU32Consts extracts every `pub const NAME: u32 = <expr>;` from the
@@ -231,6 +242,55 @@ func TestABIDriftCapabilityMask(t *testing.T) {
 	}
 	if mechanics.CapabilityMask&^(mechanics.MechAuthRequired|mechanics.MechAuthRevocable|mechanics.MechClawbackEnabled) != 0 {
 		t.Errorf("CapabilityMask carries reported-only bits: %#x", uint32(mechanics.CapabilityMask))
+	}
+}
+
+// TestABIDriftIntegratorCrate extends the drift check to the integrator
+// crate (issue #469). assay-gate is what a third-party gate compiles against,
+// so its copy of the ABI constants must agree with the registry's: a gate
+// that renumbers a bit relative to the deployed registry passes its own tests
+// and misreads every attestation in production, with no error anywhere.
+// Parsing both sources as text keeps the check free of cargo, the same reason
+// the original tests parse the registry as text.
+func TestABIDriftIntegratorCrate(t *testing.T) {
+	registrySrc, err := os.ReadFile(contractSourcePath(t))
+	if err != nil {
+		t.Fatalf("read registry source: %v", err)
+	}
+	crateSrc, err := os.ReadFile(gateCrateSourcePath(t))
+	if err != nil {
+		t.Fatalf("read assay-gate crate source: %v", err)
+	}
+	registry := parseRustU32Consts(t, string(registrySrc))
+	crate := parseRustU32Consts(t, string(crateSrc))
+
+	// Every constant the crate re-exports must exist in the registry at the
+	// same value. The crate may carry helpers the registry does not (a policy
+	// function, say), but not a differing constant under a registry name.
+	names := []string{
+		"MECH_AUTH_REQUIRED",
+		"MECH_AUTH_REVOCABLE",
+		"MECH_CLAWBACK_ENABLED",
+		"MECH_FLAGS_LOCKED",
+		"MECH_DOMAIN_UNVERIFIED",
+		"MECH_BLOCKLISTED",
+		"CAPABILITY_MASK",
+		"CONFISCATION_MASK",
+	}
+	for _, name := range names {
+		want, ok := registry[name]
+		if !ok {
+			t.Fatalf("registry const %s missing: cannot judge the crate against it", name)
+		}
+		got, ok := crate[name]
+		if !ok {
+			t.Errorf("assay-gate const %s missing: an integrator cannot select it by name", name)
+			continue
+		}
+		if got != want {
+			t.Errorf("assay-gate drift on %s: crate=%#x registry=%#x",
+				name, got, want)
+		}
 	}
 }
 
