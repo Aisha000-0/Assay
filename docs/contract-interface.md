@@ -63,6 +63,8 @@ pub fn attest(env: Env, asset: Address, severity: u32, flags: u32, evidence_hash
 pub fn attest_many(env: Env, attestations: Vec<Attestation>) -> Result<(), Error>;
 pub fn revoke(env: Env, asset: Address) -> Result<(), Error>;
 pub fn init(env: Env, admin: Address) -> Result<(), Error>;
+pub fn transfer_admin(env: Env, new_admin: Address) -> Result<(), Error>;
+pub fn accept_admin(env: Env) -> Result<(), Error>;
 ```
 
 The `Vec<Attestation>` argument is confirmed against the built artifact rather
@@ -74,11 +76,12 @@ struct is a supported argument type in soroban-sdk 27.
 | Error | Code | Returned by |
 | --- | --- | --- |
 | `AlreadyInitialized` | 1 | `init` on an initialized contract |
-| `NotInitialized` | 2 | `attest`, `attest_many`, `revoke` before `init` |
+| `NotInitialized` | 2 | `attest`, `attest_many`, `revoke`, `transfer_admin` before `init` |
 | `InvalidSeverity` | 3 | `attest`, `attest_many` with severity above 4 |
 | `InconsistentAttestation` | 4 | `attest`, `attest_many` with the clawback bit below `SEVERITY_HIGH` |
 | `NotAttested` | 5 | `revoke` for an asset with no attestation |
-| `BatchTooLarge` | 6 | `attest_many` with more than `MAX_BATCH_SIZE` elements |
+| `NoPendingAdmin` | 6 | `accept_admin` with no pending transfer |
+| `BatchTooLarge` | 7 | `attest_many` with more than `MAX_BATCH_SIZE` elements |
 
 ### `attest_many`: many attestations in one transaction
 
@@ -222,6 +225,45 @@ deployment**: a new contract ID, `init`, re-attesting the assets from live
 scans, and redeploying the example gate against the new address. The steps are
 in [deployment.md](deployment.md#migrating-to-a-registry-with-revoke).
 Until that is done, the live testnet registry still has no revoke path.
+
+### Admin transfer: two-step rotation
+
+On any instance built from current source, the admin role can be moved to a new
+key **without redeploying**. It is a two-step handshake, so a transfer to an
+unowned address or a mistyped key cannot silently hand the registry to a
+stranger:
+
+- **`transfer_admin(new_admin)`** — authorized by the **current admin**
+  (`require_auth` on the stored admin). It records `new_admin` as the pending
+  admin and changes nothing else: the current admin still attests and revokes,
+  and a second `transfer_admin` replaces the pending address. It is not a
+  transfer until the second step.
+- **`accept_admin()`** — authorized by the **pending admin** (`require_auth` on
+  the address recorded by `transfer_admin`). It promotes that address to admin,
+  clears the pending entry, and completes the transfer. After this the old
+  admin can no longer `attest`, `revoke`, or start another transfer.
+
+The errors specific to this path are typed rather than silent:
+
+| Call | Condition | Result |
+| --- | --- | --- |
+| `transfer_admin` | before `init` | `NotInitialized` (2) |
+| `transfer_admin` | caller is not the current admin | `require_auth` failure; nothing changes |
+| `accept_admin` | no pending transfer | `NoPendingAdmin` (6) |
+| `accept_admin` | caller is not the pending admin | `require_auth` failure; nothing changes |
+
+Neither entrypoint publishes an event, so an admin change is not visible in the
+`attest`/`revoke` event stream; the new admin's first write is the first on-chain
+trace. A transfer moves the admin role only — the stored attestations are
+untouched and `get_safety` keeps serving them across it.
+
+**The live testnet deployment predates both entrypoints.**
+`CBK4FBIH…` was deployed on 2026-08-15, before `transfer_admin` and
+`accept_admin` existed, and it has no upgrade entrypoint to receive them.
+Calling either against the live contract fails as an unknown entrypoint, and
+rotating the live admin still means a new deployment and re-attestation — see
+[deployment.md](deployment.md#admin-transfer-and-rotation) and
+[attester-key.md](attester-key.md#rotation).
 
 ### Named policy masks for `is_safe_masked`
 
