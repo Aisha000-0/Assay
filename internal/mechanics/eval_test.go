@@ -464,3 +464,53 @@ func TestEvalLoaderStates(t *testing.T) {
 		}
 	})
 }
+
+// TestRedirectOffHostRefusedStatesRefusedHost asserts that when an issuer's
+// home_domain redirects to an unrelated host, the redirect is refused,
+// accountability is unverified, and the report states the refused host in its
+// reasoning and evidence (#380).
+func TestRedirectOffHostRefusedStatesRefusedHost(t *testing.T) {
+	eng := mechanics.NewEngine()
+	rep, err := eng.Run(context.Background(), loadSubject(t, "synthetic-redirect-off-host"))
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	if rep.Accountability != mechanics.AccountabilityUnverified {
+		t.Errorf("accountability = %v, want %v", rep.Accountability, mechanics.AccountabilityUnverified)
+	}
+
+	var domainFinding *mechanics.Finding
+	for i := range rep.Findings {
+		if rep.Findings[i].Check == "sep1-domain" {
+			domainFinding = &rep.Findings[i]
+			break
+		}
+	}
+	if domainFinding == nil {
+		t.Fatal("report carries no sep1-domain finding")
+	}
+
+	const wantRefusedHost = "other.example"
+	if !strings.Contains(domainFinding.Reasoning, wantRefusedHost) {
+		t.Errorf("sep1-domain reasoning %q does not state the refused host %q",
+			domainFinding.Reasoning, wantRefusedHost)
+	}
+
+	var foundTomlEvidence bool
+	for _, ev := range rep.Evidence {
+		if ev.Source == "stellar.toml" {
+			foundTomlEvidence = true
+			if !strings.Contains(ev.Claim, wantRefusedHost) {
+				t.Errorf("evidence claim %q does not state the refused host %q",
+					ev.Claim, wantRefusedHost)
+			}
+			if !ev.Attempted {
+				t.Error("evidence is not marked Attempted")
+			}
+		}
+	}
+	if !foundTomlEvidence {
+		t.Fatal("report carries no stellar.toml evidence")
+	}
+}

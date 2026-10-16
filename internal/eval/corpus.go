@@ -233,5 +233,20 @@ func Corpus() []Label {
 				"reputation": {Undetermined: true},
 			},
 		},
+		{
+			Dir: "synthetic-redirect-off-host",
+			Why: "a home_domain whose stellar.toml redirects to an unrelated host, " +
+				"which the redirect rule refuses: accountability must be unverified " +
+				"and evidence must name the refused host (#380)",
+			Base:           mechanics.Clear,
+			Severity:       mechanics.Clear,
+			Accountability: mechanics.AccountabilityUnverified,
+			Checks: map[string]CheckLabel{
+				"capability":  {Severity: mechanics.Clear},
+				"mutability":  {Severity: mechanics.Clear},
+				"sep1-domain": {Severity: mechanics.Clear, Mechanics: mechanics.MechDomainUnverified},
+				"reputation":  {Severity: mechanics.Clear, Escalation: true},
+			},
+		},
 	}
 }

@@ -81,6 +81,8 @@ func LoadSubject(fixturesDir, dir string) (*mechanics.Subject, error) {
 		s.Toml = doc
 	} else if msg, ok := readErrMarker(filepath.Join(base, "stellar.toml.status")); ok {
 		s.TomlErr = "status " + msg
+	} else if msg, ok := readErrMarker(filepath.Join(base, "stellar.toml.err")); ok {
+		s.TomlErr = msg
 	}
 
 	s.DirectoryURL = "https://api.stellar.expert/explorer/directory/" + stat.AssetIssuer

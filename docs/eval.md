@@ -32,6 +32,7 @@ with provenance recorded in
 | `DOGE` (darkpool.digital) | trap | Known scam carrying **no auth flags**. The case that justifies the second axis. |
 | `DOGE` (reputation outage) | **degraded** | The same real scam as the row above, captured with the StellarExpert directory unavailable. Neither legitimate nor trap: the correct answer is **undetermined**, and the subject exists so a source outage can never again be reported as a clean result (issue #23). |
 | `VELO` (no domain) | legitimate | An issuer account with no `home_domain` at all — the field is absent from the ledger record. Nothing was ever claimed, so accountability must be `unknown` rather than `unverified`, and severity must stay `clear` (#3). |
+| `synthetic-redirect-off-host` | **synthetic** | A home_domain whose stellar.toml redirects to an unrelated host, which the redirect rule refuses. The eval pins that accountability is unverified and the report names the refused host (#380). |
 
 ## Results
 
@@ -49,6 +50,7 @@ row on each test run, so the table cannot drift from the code without a red test
 | doge-noflags-scam | `DOGE` | clear | **critical** | true | false | unverified | `domain_unverified`, `blocklisted` |
 | doge-reputation-outage | `DOGE` | clear | **clear** | false | **true** | unverified | `domain_unverified` |
 | velo-no-home-domain | `VELO` | clear | **clear** | false | **true** | unknown | `domain_unverified` |
+| synthetic-redirect-off-host | `SYNTHETIC` | clear | **clear** | false | false | unverified | `domain_unverified` |
 
 The `doge-reputation-outage` row is the point of the `Undetermined` column: its
 severity is the capability floor, exactly as if nothing were wrong, and the
@@ -182,8 +184,21 @@ disguise: identical flags to `aqua-clear-verified`, identical `clear` result.
 The `domain_unverified` bit still appears, because no identity was published
 to verify against. With no `home_domain` there is no domain to key the blocklist
 on, so the reputation question cannot be put at all and the report is
-`undetermined: true` — a floor, not an answer. This subject is the fixture for
-issue #3.
+`undetermined: true` — a floor, not an answer. This subject is the fixture for issue #3.
+
+### synthetic-redirect-off-host — off-host redirects are refused and recorded
+
+`base: clear` → `final: clear`, `accountability: unverified`, not escalated.
+
+SEP-1 requires stellar.toml to be hosted on the same domain as `home_domain`
+or follow strictly allowed redirect rules. When a domain redirects off-host to
+an unrelated domain (`redirect.example` -> `other.example`), Assay's redirect
+rule refuses to follow it.
+
+This subject pins that the refusal is surfaced through to the full evaluation
+report: accountability is `unverified`, the `domain_unverified` mechanic bit is
+set, and the evidence and finding reasoning explicitly state the refused target
+host (`other.example`).
 
 ## Per-check evaluation
 
@@ -212,6 +227,7 @@ Measured per-check output (same fixtures as the table above):
 | doge-noflags-scam | clear | clear | unverified, `domain_unverified` | critical, `blocklisted` |
 | doge-reputation-outage | clear | clear | unverified, `domain_unverified` | **undetermined** |
 | velo-no-home-domain | clear | clear | unknown, `domain_unverified` | **undetermined** |
+| synthetic-redirect-off-host | clear | clear | unverified, `domain_unverified` | clear (escalation axis) |
 
 The `reputation` column carries the escalation axis: its finding is `clear` with
 `escalation: true` when nothing is flagged, and `critical` with `blocklisted`
@@ -361,10 +377,11 @@ dataset labeling section below.
 
 Stated plainly, because an eval that hides its gaps is marketing.
 
-- **Nine subjects, eight assets.** Enough to pin the judgment boundaries, not
+- **Ten subjects, eight assets.** Enough to pin the judgment boundaries, not
   enough for a statistical claim. No precision/recall numbers are quoted,
-  because nine subjects cannot support them. (`DOGE` appears twice: once as
-  the live trap, once as the reputation-outage variant.)
+  because ten subjects cannot support them. (`DOGE` appears twice: once as
+  the live trap, once as the reputation-outage variant; `synthetic-redirect-off-host`
+  is a synthetic fixture for redirect policy refusal.)
 - **~~No legitimately-clawback-enabled asset~~ Closed 2026-09-27.**
   `USDZ-GAKTLPC4ZV37SSCITQ5IS5AQ4WPF4CF4VZJQPPAROSGXMYOATF5U6XPR` (Zeam Money)
   is now in the set as `usdz-clawback-regulated`: clawback-capable, reciprocal
