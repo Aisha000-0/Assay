@@ -1281,3 +1281,184 @@ fn batch_size_bound_is_measured_and_holds_headroom() {
         "the cap must stay under the {hard_ceiling}-element hard ceiling"
     );
 }
+
+/// Rotating the admin must not orphan or silently invalidate what the old
+/// admin already attested. Across a completed two-step transfer from A to B:
+/// the attestation A wrote stays readable and unchanged; A can no longer
+/// overwrite or revoke it, and a rejected attempt publishes nothing; B can do
+/// both, and B's writes publish their events as usual.
+#[test]
+fn attestations_survive_admin_transfer_and_follow_the_new_admin() {
+    let env = Env::default();
+    let contract_id = env.register(SafetyRegistry, ());
+    let client = SafetyRegistryClient::new(&env, &contract_id);
+    let a = Address::generate(&env);
+    let b = Address::generate(&env);
+    client.init(&a);
+
+    let asset = Address::generate(&env);
+    let other = Address::generate(&env);
+    env.ledger().set_timestamp(1_000);
+
+    // The auth mocked for one address and one call, so "A can no longer"
+    // is a statement about the contract and not about mock_all_auths.
+    macro_rules! as_admin {
+        ($who:expr, $fn_name:expr, $args:expr) => {
+            client.mock_auths(&[MockAuth {
+                address: $who,
+                invoke: &MockAuthInvoke {
+                    contract: &contract_id,
+                    fn_name: $fn_name,
+                    args: $args.into_val(&env),
+                    sub_invokes: &[],
+                },
+            }])
+        };
+    }
+
+    as_admin!(
+        &a,
+        "attest",
+        (&asset, SEVERITY_LOW, MECH_AUTH_REQUIRED, hash(&env))
+    )
+    .attest(&asset, &SEVERITY_LOW, &MECH_AUTH_REQUIRED, &hash(&env));
+    let before = client.get_safety(&asset).expect("A's attestation");
+
+    as_admin!(&a, "transfer_admin", (&b,)).transfer_admin(&b);
+    as_admin!(&b, "accept_admin", ()).accept_admin();
+
+    // Read: the old attestation is intact and still gates as before.
+    assert_eq!(client.get_safety(&asset), Some(before.clone()));
+    assert!(client.is_safe(&asset, &SEVERITY_LOW, &3_600));
+
+    // Overwrite and revoke by A are rejected, change nothing and publish nothing.
+    let err = as_admin!(&a, "attest", (&asset, SEVERITY_CLEAR, 0u32, hash(&env)))
+        .try_attest(&asset, &SEVERITY_CLEAR, &0, &hash(&env))
+        .expect_err("the old admin must not overwrite");
+    assert!(err.is_err());
+    assert_eq!(
+        env.events().all().filter_by_contract(&client.address),
+        vec![&env]
+    );
+    let err = as_admin!(&a, "revoke", (&asset,))
+        .try_revoke(&asset)
+        .expect_err("the old admin must not revoke");
+    assert!(err.is_err());
+    assert_eq!(client.get_safety(&asset), Some(before));
+
+    // B overwrites: the new value is stored and exactly one attest event for
+    // this asset is published.
+    env.ledger().set_timestamp(2_000);
+    as_admin!(&b, "attest", (&asset, SEVERITY_CLEAR, 0u32, hash(&env))).attest(
+        &asset,
+        &SEVERITY_CLEAR,
+        &0,
+        &hash(&env),
+    );
+    let after = client.get_safety(&asset).expect("B's overwrite");
+    assert_eq!(after.severity, SEVERITY_CLEAR);
+    assert_eq!(after.attested_at, 2_000);
+    let events = env.events().all().filter_by_contract(&client.address);
+    assert_eq!(events.events().len(), 1);
+
+    // B also writes a fresh asset and revokes the one A first attested.
+    as_admin!(&b, "attest", (&other, SEVERITY_CLEAR, 0u32, hash(&env))).attest(
+        &other,
+        &SEVERITY_CLEAR,
+        &0,
+        &hash(&env),
+    );
+    as_admin!(&b, "revoke", (&asset,)).revoke(&asset);
+    assert_eq!(client.get_safety(&asset), None);
+    assert!(client.get_safety(&other).is_some());
+}
+
+/// `attest_many` is all-or-nothing (threat model class 3). The fixed-position
+/// test above covers one size and one position; this sweeps batch size
+/// (1…[`MAX_BATCH_SIZE`]), the position of the invalid element, and the kind of
+/// invalidity, from a seeded generator so a failure is replayable: the seed
+/// and iteration are in every assertion message. Set `ASSAY_PROP_SEED` to
+/// replay a seed.
+#[test]
+fn attest_many_is_all_or_nothing_over_generated_batches() {
+    let seed: u64 = std::env::var("ASSAY_PROP_SEED")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0x5eed_a55a_7e57_0001);
+    let mut state = seed;
+    // xorshift64: small, deterministic, and enough for choosing indices.
+    let mut next = move |bound: u64| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state % bound
+    };
+
+    let (env, client, _) = setup();
+    let mut seen_edges = [false; 2];
+
+    for iteration in 0..64u64 {
+        let size = 1 + next(MAX_BATCH_SIZE as u64) as u32;
+        let size = match iteration {
+            0 => 1,
+            1 => MAX_BATCH_SIZE,
+            _ => size,
+        };
+        let pos = next(size as u64) as u32;
+        let ctx = format!("seed={seed} iteration={iteration} size={size} pos={pos}");
+        if pos == 0 {
+            seen_edges[0] = true;
+        }
+        if pos == size - 1 {
+            seen_edges[1] = true;
+        }
+
+        let (invalid_flags, invalid_severity, want) = match next(2) {
+            0 => (
+                0,
+                SEVERITY_CRITICAL + 1 + next(3) as u32,
+                Error::InvalidSeverity,
+            ),
+            _ => (
+                MECH_CLAWBACK_ENABLED,
+                next(SEVERITY_HIGH as u64) as u32,
+                Error::InconsistentAttestation,
+            ),
+        };
+
+        let mut assets = std::vec::Vec::new();
+        let mut batch = Vec::new(&env);
+        for i in 0..size {
+            let asset = Address::generate(&env);
+            batch.push_back(if i == pos {
+                att(&env, &asset, invalid_severity, invalid_flags)
+            } else {
+                att(&env, &asset, SEVERITY_CLEAR, 0)
+            });
+            assets.push(asset);
+        }
+
+        let err = client
+            .try_attest_many(&batch)
+            .expect_err(&format!("an invalid batch must be rejected ({ctx})"));
+        assert_eq!(err, Ok(want), "{ctx}");
+
+        for (i, asset) in assets.iter().enumerate() {
+            assert_eq!(
+                client.get_safety(asset),
+                None,
+                "element {i} written ({ctx})"
+            );
+        }
+        assert_eq!(
+            env.events().all().filter_by_contract(&client.address),
+            vec![&env],
+            "a rejected batch must publish no events ({ctx})"
+        );
+    }
+
+    assert!(
+        seen_edges[0] && seen_edges[1],
+        "the generator must reach both ends of a batch (seed={seed})"
+    );
+}
