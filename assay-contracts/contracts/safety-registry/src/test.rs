@@ -1377,14 +1377,11 @@ fn attestations_survive_admin_transfer_and_follow_the_new_admin() {
 /// test above covers one size and one position; this sweeps batch size
 /// (1…[`MAX_BATCH_SIZE`]), the position of the invalid element, and the kind of
 /// invalidity, from a seeded generator so a failure is replayable: the seed
-/// and iteration are in every assertion message. Set `ASSAY_PROP_SEED` to
-/// replay a seed.
+/// and iteration are in every assertion message. The crate is
+/// `no_std`, so the seed is the constant below; change it to explore others.
 #[test]
 fn attest_many_is_all_or_nothing_over_generated_batches() {
-    let seed: u64 = std::env::var("ASSAY_PROP_SEED")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0x5eed_a55a_7e57_0001);
+    let seed: u64 = 0x5eed_a55a_7e57_0001;
     let mut state = seed;
     // xorshift64: small, deterministic, and enough for choosing indices.
     let mut next = move |bound: u64| {
@@ -1405,7 +1402,6 @@ fn attest_many_is_all_or_nothing_over_generated_batches() {
             _ => size,
         };
         let pos = next(size as u64) as u32;
-        let ctx = format!("seed={seed} iteration={iteration} size={size} pos={pos}");
         if pos == 0 {
             seen_edges[0] = true;
         }
@@ -1426,7 +1422,7 @@ fn attest_many_is_all_or_nothing_over_generated_batches() {
             ),
         };
 
-        let mut assets = std::vec::Vec::new();
+        let mut assets = Vec::new(&env);
         let mut batch = Vec::new(&env);
         for i in 0..size {
             let asset = Address::generate(&env);
@@ -1435,25 +1431,30 @@ fn attest_many_is_all_or_nothing_over_generated_batches() {
             } else {
                 att(&env, &asset, SEVERITY_CLEAR, 0)
             });
-            assets.push(asset);
+            assets.push_back(asset);
         }
 
-        let err = client
-            .try_attest_many(&batch)
-            .expect_err(&format!("an invalid batch must be rejected ({ctx})"));
-        assert_eq!(err, Ok(want), "{ctx}");
-
+        let Err(err) = client.try_attest_many(&batch) else {
+            panic!(
+                "invalid batch accepted: seed={seed} iteration={iteration} size={size} pos={pos}"
+            );
+        };
+        assert_eq!(
+            err,
+            Ok(want),
+            "seed={seed} iteration={iteration} size={size} pos={pos}"
+        );
         for (i, asset) in assets.iter().enumerate() {
             assert_eq!(
-                client.get_safety(asset),
+                client.get_safety(&asset),
                 None,
-                "element {i} written ({ctx})"
+                "element {i} written: seed={seed} iteration={iteration} size={size} pos={pos}"
             );
         }
         assert_eq!(
             env.events().all().filter_by_contract(&client.address),
             vec![&env],
-            "a rejected batch must publish no events ({ctx})"
+            "rejected batch published events: seed={seed} iteration={iteration} size={size} pos={pos}"
         );
     }
 
