@@ -128,3 +128,103 @@ issuer = "`+domainIssuer+`"
 		t.Errorf("verified reasoning must state the round trip:\n%s", f.Reasoning)
 	}
 }
+
+// TestDomainCheckSurfacesCurrencyStatusAsEvidence is the status change: when
+// the matching CURRENCIES entry publishes a status, the finding carries it as
+// a second attributed evidence claim — and moves nothing else. Severity stays
+// Clear (status is an issuer's self-published claim, not a ledger capability)
+// and accountability stays Verified (reciprocity already settled it, whatever
+// the entry says).
+func TestDomainCheckSurfacesCurrencyStatusAsEvidence(t *testing.T) {
+	f := runDomain(t, domainSubject(t, `
+[[CURRENCIES]]
+code = "USDC"
+issuer = "`+domainIssuer+`"
+status = "dead"
+`))
+
+	if f.Severity != mechanics.Clear {
+		t.Errorf("severity = %v, want Clear: a published status must never move severity", f.Severity)
+	}
+	if f.Accountability == nil {
+		t.Fatal("domain check must always set accountability")
+	}
+	if *f.Accountability != mechanics.AccountabilityVerified {
+		t.Errorf("accountability = %q, want %q: an issuer calling its own asset dead "+
+			"does not un-claim it", *f.Accountability, mechanics.AccountabilityVerified)
+	}
+	if f.Mechanics&mechanics.MechDomainUnverified != 0 {
+		t.Error("a status-carrying claim is still a verified claim; the unverified bit must stay unset")
+	}
+
+	if len(f.Evidence) != 2 {
+		t.Fatalf("want claim evidence plus status evidence, got %d: %+v", len(f.Evidence), f.Evidence)
+	}
+	status := f.Evidence[1]
+	if status.Source != "stellar.toml" {
+		t.Errorf("status evidence source = %q, want stellar.toml", status.Source)
+	}
+	if status.URL != "https://circle.com/.well-known/stellar.toml" {
+		t.Errorf("status evidence URL = %q, want the document's final location", status.URL)
+	}
+	if !strings.Contains(status.Claim, "dead") {
+		t.Errorf("status claim must carry the published value verbatim: %q", status.Claim)
+	}
+	if status.RetrievedAt.IsZero() {
+		t.Error("status evidence must carry the document's retrieval time")
+	}
+	if status.Attempted || status.Refused {
+		t.Error("a published status is a retrieval, not an attempt or a refusal")
+	}
+}
+
+// TestDomainCheckEmitsNoStatusEvidenceWhenAbsent pins the other half of the
+// change: an entry that publishes no status emits no status claim, so the
+// evidence bytes — and therefore evidence_hash — are unchanged for every
+// asset whose entry sets no status.
+func TestDomainCheckEmitsNoStatusEvidenceWhenAbsent(t *testing.T) {
+	f := runDomain(t, domainSubject(t, `
+[[CURRENCIES]]
+code = "USDC"
+issuer = "`+domainIssuer+`"
+`))
+
+	if len(f.Evidence) != 1 {
+		t.Fatalf("want exactly one evidence entry, got %d: %+v", len(f.Evidence), f.Evidence)
+	}
+	if strings.Contains(f.Evidence[0].Claim, "status") {
+		t.Errorf("no-status entry emitted a status claim: %q", f.Evidence[0].Claim)
+	}
+	if f.Severity != mechanics.Clear {
+		t.Errorf("severity = %v, want Clear", f.Severity)
+	}
+	if f.Accountability == nil || *f.Accountability != mechanics.AccountabilityVerified {
+		t.Errorf("accountability = %v, want verified", f.Accountability)
+	}
+}
+
+// TestDomainCheckIgnoresStatusOfOtherEntries: a status belongs to the entry
+// that claims THIS asset. A status on any other entry — another asset's, or a
+// same-code entry under a different issuer — is not this asset's status and
+// must not be surfaced for it.
+func TestDomainCheckIgnoresStatusOfOtherEntries(t *testing.T) {
+	f := runDomain(t, domainSubject(t, `
+[[CURRENCIES]]
+code = "USDC"
+issuer = "`+domainIssuer+`"
+
+[[CURRENCIES]]
+code = "USDC"
+issuer = "`+otherIssuer+`"
+status = "dead"
+`))
+
+	for _, e := range f.Evidence {
+		if strings.Contains(e.Claim, "status") {
+			t.Errorf("another issuer's status was surfaced for this asset: %q", e.Claim)
+		}
+	}
+	if len(f.Evidence) != 1 {
+		t.Errorf("want exactly one evidence entry, got %d: %+v", len(f.Evidence), f.Evidence)
+	}
+}
