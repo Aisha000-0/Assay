@@ -1355,11 +1355,13 @@ fn attestations_survive_admin_transfer_and_follow_the_new_admin() {
         &0,
         &hash(&env),
     );
+    // Read the events before any other call: `events().all()` reports only the
+    // most recent invocation.
+    let events = env.events().all().filter_by_contract(&client.address);
+    assert_eq!(events.events().len(), 1);
     let after = client.get_safety(&asset).expect("B's overwrite");
     assert_eq!(after.severity, SEVERITY_CLEAR);
     assert_eq!(after.attested_at, 2_000);
-    let events = env.events().all().filter_by_contract(&client.address);
-    assert_eq!(events.events().len(), 1);
 
     // B also writes a fresh asset and revokes the one A first attested.
     as_admin!(&b, "attest", (&other, SEVERITY_CLEAR, 0u32, hash(&env))).attest(
