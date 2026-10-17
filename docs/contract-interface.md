@@ -673,6 +673,95 @@ An undeterminable network is an error, never a default, for the same reason an
 unread flag is `Unevaluated` rather than `Clear`: a guessed network name in a
 hashed field is a false attestation waiting to be written.
 
+### Formal grammar (ABNF)
+
+The prose above states the intent; this grammar is the contract. It is
+written per [RFC 5234](https://www.rfc-editor.org/rfc/rfc5234) over bytes
+(LF-terminated UTF-8 lines, HTAB-separated fields), and it describes exactly
+what `attest.Preimage` emits today — including two divergences from the prose
+above, which are named inline and tracked as open issues rather than papered
+over. The machine-readable suite in [`conformance/`](../conformance) pins one
+or more cases per rule; `internal/attest/conformance_test.go` runs it in CI
+and fails if any grammar rule is uncovered. Any other implementation can run
+the same cases from the JSON alone, without reading the Go code.
+
+```abnf
+; Canonical evidence preimage. Byte-oriented: the ranges below are bytes,
+; so a multi-byte UTF-8 sequence passes through as its constituent bytes.
+
+preimage        = version-line [scanner-line] field-lines *evidence-line
+
+version-line    = "assay-evidence-v1" LF
+                / "assay-evidence-v2" LF
+                / "assay-evidence-v3" LF
+
+; The scanner line is emitted only when the report opts into identity
+; binding (Report.ScannerBound). Its value is the scanner's module
+; version or the literal "devel", escaped like every other field.
+scanner-line    = "scanner" HTAB escaped-value LF
+
+field-lines     = asset-line
+                  severity-line
+                  base-severity-line
+                  escalated-line
+                  mechanics-line
+                  accountability-line
+                  checks-line
+                  [network-line]
+
+asset-line      = "asset" HTAB escaped-value LF
+severity-line   = "severity" HTAB 1*DIGIT LF
+base-severity-line = "base_severity" HTAB 1*DIGIT LF
+escalated-line  = "escalated" HTAB ("true" / "false") LF
+mechanics-line  = "mechanics" HTAB 1*DIGIT LF
+accountability-line = "accountability" HTAB accountability LF
+accountability  = "unknown" / "unverified" / "verified"
+
+; The checks line is emitted for EVERY report, and its value is empty when
+; no check set is bound. DIVERGENCE (#269): the prose above says a report
+; from before check-set binding carries no checks line at all, and the
+; attestation on chain was hashed that way; the current encoder emits the
+; empty line instead. The grammar and the conformance suite describe the
+; bytes the code emits today, so that #269's fix becomes a deliberate,
+; reviewable suite update rather than a silent drift.
+checks-line     = "checks" HTAB [check-list] LF
+check-list      = check-id *("," check-id)
+check-id        = 1*(ALPHA / DIGIT / "-" / "_")
+
+network-line    = "network" HTAB escaped-value LF
+
+; One line per attributed claim. Constraint outside the grammar: the
+; evidence lines are sorted bytewise across the RENDERED lines (including
+; the "evidence" key and separators), so reordering checks or claims does
+; not move the hash.
+evidence-line   = "evidence" HTAB escaped-value HTAB escaped-value HTAB escaped-value LF
+
+escaped-value   = *(safe-char / escaped)
+escaped         = %x5C.5C          ; \\ — a literal backslash
+                / %x5C.74          ; \t — HTAB
+                / %x5C.6E          ; \n — LF
+                / %x5C.72          ; \r — CR
+safe-char       = %x00-09 / %x0B-0C / %x0E-5B / %x5D-FF
+                  ; every byte except HTAB (09), LF (0A), CR (0D),
+                  ; and backslash (5C) — the four escaping covers
+```
+
+Version selection sits outside the grammar but is part of the contract: the
+version line names the newest binding the report carries — `v3` when it binds
+a scanner identity, a network, or both; `v2` when it binds only a check set;
+`v1` otherwise. (DIVERGENCE #270: `v3` therefore covers scanner-only,
+network-only and both, so the tag alone does not determine one layout — the
+grammar states this honestly as an optional `scanner-line` and an optional
+`network-line` under a single tag. #270 exists to make the tag injective;
+when it lands, this grammar splits into one rule per layout and the suite
+follows, because every case is pinned to concrete bytes.)
+
+Two more rules are load-bearing even though no production rule can express
+them: severity and mechanics render as decimal integers of their bit values,
+not as the names the report JSON uses (the bit/name table is the ABI section
+above), and retrieval timestamps are excluded entirely, so a conformance
+input's `retrieved_at` never appears in the expected preimage.
+
 ## Not done yet
 
 - **Single admin.** One key can write or revoke any attestation. A production
