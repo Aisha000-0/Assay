@@ -116,6 +116,9 @@ func usage(w io.Writer) {
                                   check a canonical preimage against an evidence_hash
   assay history [-guarantee] [-raw] CODE-ISSUER
                                   print the asset's observation history
+  assay registry-history [-rpc URL] [-contract C...] [-json] ASSET
+                                  print the registry's attest/revoke events for an asset
+                                  (CODE-ISSUER or SAC address), bounded by RPC event retention
   assay serve [-addr]             serve the HTTP API and UI
 
 Every command that scans accepts:
@@ -152,6 +155,8 @@ func runWith(args []string, d commandDeps) error {
 		return runHistory(args[1:], d)
 	case "verify":
 		return runVerify(args[1:])
+	case "registry-history":
+		return runRegistryHistory(args[1:], d)
 	case "serve":
 		return d.serve(args[1:], log)
 	default:

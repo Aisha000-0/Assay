@@ -370,6 +370,82 @@ The command reads the registry through the same simulated `get_safety` call
 registry id and network default to the live testnet deployment recorded in
 [deployment.md](deployment.md); override with `ASSAY_CONTRACT_ID` and
 `ASSAY_NETWORK` to verify against another deployment.
+## Indexing registry events
+
+An indexer is what notices a withdrawn attestation: `get_safety` returns `None`
+for both never-attested and revoked, and an overwrite replaces the old value in
+storage. The events are the only record of either. The shapes are specified in
+[contract-interface.md](contract-interface.md#attestation-events); this is how to
+consume them.
+
+### What to subscribe to
+
+Filter on the registry contract id and the two-topic layout `(label, asset)`:
+
+| Event | Topic 0 | Topic 1 | Data (a `Map<Symbol, _>`) |
+| --- | --- | --- | --- |
+| attest (one per `attest`, and one per element of `attest_many`, in batch order) | `Symbol("attest")` | asset SAC `Address` | `severity: u32`, `flags: u32`, `attested_at: u64` |
+| revoke | `Symbol("revoke")` | asset SAC `Address` | `revoked_at: u64` |
+
+A `revoke` is the only signal that an attestation was withdrawn on purpose.
+Storage archival publishes **no** event: an archived attestation is restored on
+access and reads back unchanged, so an asset that has gone quiet is not a
+revoked asset. Treat an asset as revoked only after seeing its `revoke` event,
+and as currently attested only if its latest event is an `attest`. Rejected
+calls publish nothing, so every event you see is a write that happened.
+
+### A worked `getEvents` request
+
+Topic filters take base64 XDR `ScVal`s, and `*` matches any single topic. The
+real values: `Symbol("attest")` is `AAAADwAAAAZhdHRlc3QAAA==`, `Symbol("revoke")` is
+`AAAADwAAAAZyZXZva2UAAA==`, and the asset topic below is the testnet SAC address
+`CDJF2JQINO7WRFXB2AAHLONFDPPI4M3W2UM5THGQQ7JMJDIEJYC4CMPG` (AQUA, see
+[section 5](#5-look-up-an-assets-address)). This request returns every attest and
+revoke for that asset on the testnet registry, starting from a ledger you choose:
+
+```sh
+curl -s https://soroban-testnet.stellar.org -H 'content-type: application/json' -d '{
+  "jsonrpc": "2.0", "id": 1, "method": "getEvents",
+  "params": {
+    "startLedger": 3000000,
+    "filters": [{
+      "type": "contract",
+      "contractIds": ["CBK4FBIHMDTXCUPE4E3ZDVSFJSCY5FJETTKNIQPN4LFJIKKIBLKIXQ73"],
+      "topics": [["*", "AAAAEgAAAAHSXSYIa79oluHQAHW5pRvejjN21RnZnNCH0sSNBE4FwQ=="]]
+    }],
+    "pagination": { "limit": 200 }
+  }
+}'
+```
+
+The second topic above is the XDR for a contract address (`ScVal` type 18,
+address type 1, then the 32 raw bytes of the SAC id). Build it for your asset
+rather than copying it: `assay registry-history` does the whole round trip and
+is the reference implementation (`cmd/assay/registry_history.go`).
+
+```sh
+assay registry-history AQUA-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA
+```
+
+Each result has `ledger`, `ledgerClosedAt`, `topic[]`, `value` (the data map as
+XDR), `txHash` and a `cursor` to pass back in `pagination.cursor` for the next
+page. Pages come back in ledger order.
+
+### Retention: what you cannot see
+
+`getEvents` is served from the RPC node's own window of recent ledgers, not from
+the chain forever. `getHealth` reports `oldestLedger`, `latestLedger` and
+`ledgerRetentionWindow`; the stellar-rpc default window is 17,280 ledgers (about
+24 hours) and hosted providers choose their own. A request with `startLedger`
+older than `oldestLedger` is rejected, and anything before it is simply absent.
+
+So an indexer that starts late, or that is down for longer than the window,
+**has a gap it cannot refill from RPC**. An empty result means "no events in the
+window", not "never attested". Run the indexer continuously, persist the last
+processed ledger and cursor, and archive events yourself if you need a history
+longer than your RPC's window. The registry's own retention note is in
+[contract-interface.md](contract-interface.md#attestation-events).
+
 ## Before you rely on this
 
 - It is on **testnet**, not pubnet.
