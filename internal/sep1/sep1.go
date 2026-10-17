@@ -276,6 +276,33 @@ func (d *Doc) Claims(code, issuer string) bool {
 	return false
 }
 
+// Status returns the status field of the currency entry that declares the
+// given asset inline, or the empty string when the asset is not declared
+// inline or its entry sets no status.
+//
+// It matches on both code and issuer, the same rule Claims applies, for the
+// same reason: a status is a statement about one asset, and matching on code
+// alone would let any domain attach a status to any asset code — the exact
+// impersonation the round trip exists to prevent. SEP-0001 allows more than
+// one entry to name the same code and issuer, so the first matching entry
+// wins, mirroring Claims' first-match semantics.
+//
+// The value is returned exactly as published. Assay relays it as an
+// attributed claim and never interprets it: an issuer may write any string,
+// and "dead" from an issuer is a fact about what that issuer says, not a
+// determination Assay makes.
+func (d *Doc) Status(code, issuer string) string {
+	if d == nil {
+		return ""
+	}
+	for _, c := range d.Currencies {
+		if c.matches(code, issuer) {
+			return c.Status
+		}
+	}
+	return ""
+}
+
 // LinkedCurrencies counts entries that delegate to a separate per-currency
 // TOML file — entries carrying a `toml` link — and that do not themselves
 // already declare this asset inline.

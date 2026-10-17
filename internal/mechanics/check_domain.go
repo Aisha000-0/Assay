@@ -211,6 +211,23 @@ func (c DomainCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 		Claim:       "CURRENCIES claims " + s.Asset.String(),
 		RetrievedAt: NewCanonicalTime(s.Toml.FetchedAt),
 	})
+	// SEP-0001 lets a CURRENCIES entry carry a status — "live", "dead",
+	// "test". An issuer declaring its own asset dead or test is a fact a
+	// prospective holder wants, the document is already fetched, and
+	// surfacing it costs nothing. It is relayed as attributed evidence and
+	// moves nothing else: it is the issuer's own claim about its own asset,
+	// not a ledger fact, so severity stays capability-only — and an issuer
+	// can write any string here, so Assay never treats it as a determination
+	// of its own. Accountability was already settled by the reciprocity test
+	// above and is unchanged by what the claim says.
+	if status := s.Toml.Status(s.Asset.Code, s.Asset.Issuer); status != "" {
+		f.Evidence = append(f.Evidence, Evidence{
+			Source:      "stellar.toml",
+			URL:         s.Toml.URL,
+			Claim:       "CURRENCIES entry status: " + status,
+			RetrievedAt: NewCanonicalTime(s.Toml.FetchedAt),
+		})
+	}
 	return f, nil
 }
 

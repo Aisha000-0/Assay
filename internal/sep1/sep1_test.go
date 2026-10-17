@@ -48,6 +48,53 @@ issuer = "GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2"
 	}
 }
 
+// TestStatus covers the lookup the domain check uses to surface a currency
+// entry's published status. It matches on code AND issuer for the same reason
+// Claims does: a status is a statement about one asset, and code-alone
+// matching would let any domain attach a status to someone else's code.
+func TestStatus(t *testing.T) {
+	const other = "GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2"
+
+	doc, err := sep1.Parse([]byte(`
+[[CURRENCIES]]
+code = "USDC"
+issuer = "` + issuer + `"
+status = "live"
+
+[[CURRENCIES]]
+code = "EURC"
+issuer = "` + other + `"
+`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	if got := doc.Status("USDC", issuer); got != "live" {
+		t.Errorf("Status(USDC, issuer) = %q, want %q", got, "live")
+	}
+	if got := doc.Status("usdc", issuer); got != "live" {
+		t.Errorf("status matching should be case-insensitive on the code, got %q", got)
+	}
+
+	// An entry that publishes no status is no status, not an empty claim.
+	if got := doc.Status("EURC", other); got != "" {
+		t.Errorf("Status of an entry with no status = %q, want empty", got)
+	}
+	// Code alone must never match: that would let a domain attach a status
+	// to an asset code it does not claim.
+	if got := doc.Status("USDC", "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA"); got != "" {
+		t.Errorf("Status matched on code alone with a different issuer: %q", got)
+	}
+	if got := doc.Status("XLM", issuer); got != "" {
+		t.Errorf("Status of an unlisted code = %q, want empty", got)
+	}
+
+	var nilDoc *sep1.Doc
+	if got := nilDoc.Status("USDC", issuer); got != "" {
+		t.Errorf("nil doc Status() = %q, want empty", got)
+	}
+}
+
 // SEP-0001 permits a currency entry that links to a separate per-currency
 // TOML. Counting those entries is what lets the domain check say
 // "unconfirmed" instead of wrongly saying "refuted", because a link Assay did
