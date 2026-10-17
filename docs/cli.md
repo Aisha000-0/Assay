@@ -32,6 +32,20 @@ each, and the evidence every conclusion is attributed to.
 ./assay scan CODE-ISSUER              # the findings and reasoning
 ```
 
+The network's native asset is not scannable: it has no issuer account, so
+there are no authorization flags to read. `assay scan native` (or `XLM`, any
+case) recognises the input and refuses it with an explicit explanation rather
+than a parse error, prints nothing to stdout, and exits 2:
+
+```
+assay: native asset has no issuer and no authorization flags: "XLM" cannot be scanned or attested
+```
+
+Every command that takes an asset — `scan`, `attestation`, `history`,
+`verify` — refuses it the same way, so the native asset can never be scanned
+or attested from the CLI. A credit asset whose code merely happens to be XLM
+(`XLM-G…`) is scanned as the ordinary asset it is.
+
 ## assay attestation
 
 Derives the arguments of an on-chain `attest()` call from a live scan. It
@@ -145,3 +159,21 @@ derived transitions. `-history` points that store at an append-only JSON Lines
 log so it survives a restart; without it, history is in memory and lost when the
 process exits. The default retention is 256 observations per asset and the
 policy is in [history.md](history.md).
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Success. |
+| 1 | Generic failure: the command ran but could not deliver a result. |
+| 2 | Usage error: the command or its arguments cannot be used as given — an unknown command, a missing or malformed `CODE-ISSUER`, or an identifier naming the native asset, which is never scannable. |
+| 3 | Not found: the asset or attestation does not exist on the ledger. |
+| 4 | Upstream unavailable: a source the scan depends on could not be reached. |
+| 5 | Undetermined: the scan ran, but a source outage or an inconsistency left no verdict to report. |
+
+The native-asset refusal is deliberately a usage code rather than a generic
+failure: it is answered from the ledger's own rules before any fetch, so it is
+permanent and no retry will change it — a script can distinguish "this
+identifier will never scan" from a transient failure without parsing stderr.
+The same input is answered by the HTTP API as `400 Bad Request` with the same
+message; see [api.md](api.md).
