@@ -73,7 +73,7 @@ func TestRegistryHistoryOrdersAttestAndRevokeAndReportsRetention(t *testing.T) {
 		methods = append(methods, req.Method)
 		switch req.Method {
 		case "getHealth":
-			fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"status":"healthy","latestLedger":5000,"oldestLedger":3000,"ledgerRetentionWindow":2000}}`)
+			_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"status":"healthy","latestLedger":5000,"oldestLedger":3000,"ledgerRetentionWindow":2000}}`)
 		case "getEvents":
 			if f, ok := req.Params["filters"].([]any); ok {
 				js, _ := json.Marshal(f)
@@ -82,7 +82,7 @@ func TestRegistryHistoryOrdersAttestAndRevokeAndReportsRetention(t *testing.T) {
 			pg, _ := req.Params["pagination"].(map[string]any)
 			if _, ok := pg["cursor"]; ok {
 				sawCursor = true
-				fmt.Fprintf(w, `{"jsonrpc":"2.0","id":1,"result":{"events":[{"ledger":4100,"ledgerClosedAt":"2026-10-02T10:00:00Z","id":"b","topic":[%q],"value":%q,"txHash":"tx-revoke"}],"cursor":"c2"}}`,
+				_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":1,"result":{"events":[{"ledger":4100,"ledgerClosedAt":"2026-10-02T10:00:00Z","id":"b","topic":[%q],"value":%q,"txHash":"tx-revoke"}],"cursor":"c2"}}`,
 					b64Symbol("revoke"), xMap("revoked_at", uint64(1_700_000_200)))
 				return
 			}
@@ -92,7 +92,7 @@ func TestRegistryHistoryOrdersAttestAndRevokeAndReportsRetention(t *testing.T) {
 				evs = append(evs, fmt.Sprintf(`{"ledger":%d,"ledgerClosedAt":"2026-10-01T10:00:00Z","id":"a%d","topic":[%q],"value":%q,"txHash":"tx-%d"}`,
 					3500+i, i, b64Symbol("attest"), xMap("attested_at", uint64(1_700_000_000+i), "flags", uint32(i%4), "severity", uint32(1)), i))
 			}
-			fmt.Fprintf(w, `{"jsonrpc":"2.0","id":1,"result":{"events":[%s],"cursor":"c1"}}`, strings.Join(evs, ","))
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":1,"result":{"events":[%s],"cursor":"c1"}}`, strings.Join(evs, ","))
 		}
 	}))
 	defer srv.Close()
@@ -141,10 +141,10 @@ func TestRegistryHistoryTextStatesRetention(t *testing.T) {
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		if req.Method == "getHealth" {
-			fmt.Fprint(w, `{"result":{"latestLedger":900,"oldestLedger":100,"ledgerRetentionWindow":800}}`)
+			_, _ = fmt.Fprint(w, `{"result":{"latestLedger":900,"oldestLedger":100,"ledgerRetentionWindow":800}}`)
 			return
 		}
-		fmt.Fprint(w, `{"result":{"events":[],"cursor":""}}`)
+		_, _ = fmt.Fprint(w, `{"result":{"events":[],"cursor":""}}`)
 	}))
 	defer srv.Close()
 
