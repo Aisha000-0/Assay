@@ -497,9 +497,44 @@ func normalizeHost(h string) string {
 	return strings.ToLower(strings.TrimSuffix(h, "."))
 }
 
-// URLFor returns the SEP-1 well-known location for a domain.
+// NormalizeDomain reduces a free-text home_domain to the one canonical
+// spelling of its host, so that every consumer of the string agrees on which
+// domain is being named.
+//
+// home_domain is issuer-chosen free text, and the same host can be spelled
+// several ways: DNS is case-insensitive ("EXAMPLE.com"), DNS lookup form ends
+// in a root dot ("example.com."), and an https URL may spell out its default
+// port ("example.com:443"). Assay uses this one string for three things that
+// must agree — the requested stellar.toml URL that is attributed in evidence,
+// the host the redirect policy is pinned to, and the key of the
+// malicious-domain blocklist lookup — and they cannot agree while the same
+// host can arrive in three spellings. The blocklist in particular is keyed by
+// exact string: "EXAMPLE.com" would miss an entry listed under "example.com",
+// a false negative on the one signal that can escalate severity.
+//
+// Canonical form is lowercase, without the trailing root dot and without the
+// default https port. A non-default port is preserved: it names a different
+// service, and dropping it would fetch from the wrong one.
+func NormalizeDomain(domain string) string {
+	d := strings.ToLower(strings.TrimSpace(domain))
+	d = strings.TrimSuffix(d, "/")
+	d = strings.TrimSuffix(d, ".")
+	if strings.Count(d, ":") == 1 {
+		// host:port — exactly one colon, so never an IPv6 literal, whose
+		// colons are many. Only the https default port disappears; any
+		// other port is kept.
+		d = strings.TrimSuffix(d, ":443")
+		// The root dot can also sit after the port ("example.com.:443").
+		d = strings.TrimSuffix(d, ".")
+	}
+	return d
+}
+
+// URLFor returns the SEP-1 well-known location for a domain. The domain is
+// canonicalised first, so every spelling of the same host yields the same
+// requested URL — the URL evidence attributes the fetch to.
 func URLFor(domain string) string {
-	return "https://" + strings.TrimSuffix(domain, "/") + "/.well-known/stellar.toml"
+	return "https://" + NormalizeDomain(domain) + "/.well-known/stellar.toml"
 }
 
 // Fetch retrieves and parses the stellar.toml for domain.
@@ -510,7 +545,10 @@ func URLFor(domain string) string {
 // NewFetcher); when the caller supplies its own client the literal check here
 // still applies, and the caller owns the rest of the policy.
 func (f *Fetcher) Fetch(ctx context.Context, domain string) (*Doc, error) {
-	if domain == "" {
+	// Checked after canonicalisation, not before: a domain that normalises
+	// to nothing (whitespace, a lone root dot) advertises no host to fetch
+	// from, and must report that rather than a URL parse error.
+	if NormalizeDomain(domain) == "" {
 		return nil, ErrNoDomain
 	}
 	return f.fetch(ctx, URLFor(domain))

@@ -132,6 +132,15 @@ func TestRedirectPolicy(t *testing.T) {
 		{"apex to www", "circle.com", "www.circle.com", true},
 		{"apex to deep subdomain", "circle.com", "cdn.eu.circle.com", true},
 		{"case and trailing dot", "Circle.COM.", "www.circle.com", true},
+		// The free-text home_domain shapes: however the requested host is
+		// spelled, the redirect check must judge it as the same host the
+		// requested URL and blocklist key name.
+		{"root-trailing-dot requested host", "example.com.", "www.example.com", true},
+		{"upper-case requested host", "EXAMPLE.com", "www.example.com", true},
+		{"default-port requested host", "example.com:443", "www.example.com", true},
+		{"root-trailing-dot target", "example.com", "www.example.com.", true},
+		{"upper-case target", "example.com", "WWW.EXAMPLE.COM", true},
+		{"default-port target", "example.com", "example.com:443", true},
 		{"www to apex refused", "www.circle.com", "circle.com", false},
 		{"unrelated host refused", "evil.example", "circle.com", false},
 		{"label-boundary lookalike refused", "circle.com", "notcircle.com", false},

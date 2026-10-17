@@ -216,6 +216,109 @@ func TestURLFor(t *testing.T) {
 	}
 }
 
+// TestNormalizeDomain pins the canonical form of the free-text shapes
+// home_domain arrives in from the ledger. DNS is case-insensitive, lookup
+// names end in a root dot, and an https URL may spell out its default port —
+// all three name the same host, so all three must reduce to one string. The
+// requested URL, the redirect policy and the blocklist key are all keyed on
+// this value; a disagreement between them is a verification that checks one
+// host and queries another.
+func TestNormalizeDomain(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"already canonical", "example.com", "example.com"},
+		{"root trailing dot", "example.com.", "example.com"},
+		{"upper case", "EXAMPLE.com", "example.com"},
+		{"default https port", "example.com:443", "example.com"},
+		{"all three at once", "EXAMPLE.com.:443", "example.com"},
+		{"trailing slash", "example.com/", "example.com"},
+		{"surrounding whitespace", " example.com ", "example.com"},
+		// A non-default port names a different service; dropping it would
+		// fetch from the wrong one.
+		{"non-default port preserved", "example.com:8443", "example.com:8443"},
+		// IPv6 literals carry many colons and must never be mistaken for
+		// host:port.
+		{"ipv6 literal untouched", "[2001:db8::1]", "[2001:db8::1]"},
+		{"empty", "", ""},
+		{"whitespace only", "   ", ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sep1.NormalizeDomain(tc.in); got != tc.want {
+				t.Errorf("NormalizeDomain(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+			// Normalising is idempotent: the canonical form of the
+			// canonical form must not move, or a second pass through
+			// the scanner could key a different lookup than the first.
+			if got := sep1.NormalizeDomain(sep1.NormalizeDomain(tc.in)); got != tc.want {
+				t.Errorf("NormalizeDomain twice = %q, want %q (not idempotent)", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestURLForCanonicalAcrossHomeDomainShapes pins the acceptance criterion for
+// evidence: whichever shape the ledger's home_domain wears, the requested URL
+// recorded in the report is the single canonical one. Three spellings of one
+// host must not produce three URLs a reader would have to recognise as the
+// same claim.
+func TestURLForCanonicalAcrossHomeDomainShapes(t *testing.T) {
+	const want = "https://example.com/.well-known/stellar.toml"
+	for _, in := range []string{
+		"example.com",
+		"example.com.",
+		"EXAMPLE.com",
+		"example.com:443",
+		"EXAMPLE.COM.",
+		"example.com/",
+	} {
+		if got := sep1.URLFor(in); got != want {
+			t.Errorf("URLFor(%q) = %q, want canonical %q", in, got, want)
+		}
+	}
+}
+
+// TestFetchCanonicalRequestForHomeDomainShapes drives each free-text shape
+// through Fetch and inspects the request as the remote host would receive it.
+// The requested URL on the wire, and the URL recorded on the document (which
+// becomes evidence), must be the canonical one for every shape — that is the
+// agreement the blocklist key and redirect policy are pinned against.
+func TestFetchCanonicalRequestForHomeDomainShapes(t *testing.T) {
+	const want = "https://example.com/.well-known/stellar.toml"
+
+	for _, shape := range []string{"example.com", "example.com.", "EXAMPLE.com", "example.com:443"} {
+		t.Run(shape, func(t *testing.T) {
+			var requested string
+			rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				requested = req.URL.String()
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(validToml)),
+					Header:     http.Header{},
+					Request:    req,
+				}, nil
+			})
+
+			f := sep1.NewFetcher()
+			f.HTTP = &http.Client{Transport: rt}
+			doc, err := f.Fetch(context.Background(), shape)
+			if err != nil {
+				t.Fatalf("Fetch(%q): %v", shape, err)
+			}
+			if requested != want {
+				t.Errorf("Fetch(%q) requested %q, want canonical %q", shape, requested, want)
+			}
+			if doc.URL != want {
+				t.Errorf("Fetch(%q) recorded doc.URL = %q, want canonical %q", shape, doc.URL, want)
+			}
+		})
+	}
+}
+
 // roundTripperFunc adapts a function to http.RoundTripper.
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 

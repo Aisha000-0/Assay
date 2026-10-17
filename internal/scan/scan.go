@@ -276,7 +276,15 @@ func (s *Scanner) Subject(ctx context.Context, a mechanics.Asset) (*mechanics.Su
 		dirURL       string
 	)
 
-	if domain := issuer.HomeDomain; domain != "" {
+	// Canonicalise the issuer's free-text home_domain once, here, so that
+	// every consumer of the string agrees on which domain is being named:
+	// the requested stellar.toml URL, the redirect policy (pinned to the
+	// requested host), and the blocklist lookup below. A blocklist is keyed
+	// by exact string, so "EXAMPLE.com" or "example.com." from the ledger
+	// must not silently miss an entry listed under "example.com" — that is
+	// a false negative on the one signal that can escalate severity.
+	domain := sep1.NormalizeDomain(issuer.HomeDomain)
+	if domain != "" {
 		tomlURL = sep1.URLFor(domain)
 		wg.Add(1)
 		go func() {
@@ -359,7 +367,7 @@ func (s *Scanner) Subject(ctx context.Context, a mechanics.Asset) (*mechanics.Su
 		sub.TomlLinked = s.Toml.ResolveLinked(ctx, tomlDoc, a.Code, a.Issuer)
 	}
 
-	if issuer.HomeDomain != "" {
+	if domain != "" {
 		sub.BlockedURL = blockedURL
 		sub.Blocked = blockedVal.Value
 		sub.BlockedErr = blockedErr
