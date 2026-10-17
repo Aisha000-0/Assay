@@ -36,31 +36,37 @@ For a complete breakdown of every party you are trusting (issuer, attester key,
 Horizon, and reputation providers) and the consequences if each is dishonest or
 wrong, see [trust.md](trust.md).
 
-## 1. Declare the interface
+## 1. Depend on the `assay-gate` crate
 
-You do not need a dependency on Assay. Declare the parts you call:
+You do not need a dependency on the registry contract, but you do not need to
+copy-paste its interface either. The parts you call — the `Safety` type, the
+`SafetyRegistry` client, the mechanic bit constants and a policy-checking
+helper — ship as a small `no_std` crate in this repository, versioned with
+the registry's ABI (#469):
+
+```toml
+[dependencies]
+assay-gate = { git = "https://github.com/use-assay/Assay", rev = "<revision of the registry build you target>" }
+```
+
+Pin `rev` to the commit of the registry build you are integrating against —
+the same build recorded in [deployment.md](deployment.md) — rather than to a
+branch. The constants in the crate are the registry's ABI, and the Go engine's
+ABI drift test parses the crate and fails the build if its constants ever
+disagree with the registry contract or with `internal/mechanics`, so a pinned
+revision cannot silently renumber a bit under you. Then:
 
 ```rust
-use soroban_sdk::{contractclient, contracttype, Address, BytesN, Env};
-
-/// Field names and types are ABI — they must match the registry exactly,
-/// because a #[contracttype] struct crosses the boundary as a map keyed by
-/// these names.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Safety {
-    pub severity: u32,
-    pub flags: u32,
-    pub evidence_hash: BytesN<32>,
-    pub attested_at: u64,
-}
-
-#[contractclient(name = "SafetyRegistryClient")]
-pub trait SafetyRegistry {
-    fn get_safety(env: Env, asset: Address) -> Option<Safety>;
-    fn is_safe(env: Env, asset: Address, max_severity: u32, max_age_secs: u64) -> bool;
-}
+use assay_gate::{Safety, SafetyRegistryClient, CAPABILITY_MASK,
+    MECH_AUTH_REVOCABLE, MECH_CLAWBACK_ENABLED};
 ```
+
+`Safety` crosses the contract boundary as a map keyed by its field names, so
+its names and types are ABI — which is exactly why they live in one
+drift-tested crate rather than in every gate that copies them. What each bit
+means is in the table below; `CAPABILITY_MASK` selects the three power bits
+and exists because picking "the dangerous bits" by hand is how
+[#26](https://github.com/use-assay/Assay/issues/26) happened.
 
 ## 2. Decide what you are refusing
 
@@ -123,12 +129,12 @@ plenty of assets whose issuers can do nothing to you.
 ## 3. Write the gate
 
 ```rust
-use assay_safety_registry::{CAPABILITY_MASK, MECH_AUTH_REVOCABLE, MECH_CLAWBACK_ENABLED};
+use assay_gate::{CAPABILITY_MASK, MECH_AUTH_REVOCABLE, MECH_CLAWBACK_ENABLED};
 
 /// Powers a custodial balance cannot survive: the freeze and clawback bits
-/// selected through Assay's exported capability mask rather than hand-rolled
-/// from memory. The registry exports CAPABILITY_MASK (all three power bits)
-/// and the policy masks below; picking bits by hand is how #26 happened.
+/// selected through the crate's exported capability mask rather than
+/// hand-rolled from memory. CAPABILITY_MASK is all three power bits;
+/// picking bits by hand is how #26 happened.
 pub const REFUSED_MECHANICS: u32 = MECH_AUTH_REVOCABLE | MECH_CLAWBACK_ENABLED;
 
 /// Documented defaults for the deployed gate. These are not hidden globals;
@@ -170,6 +176,14 @@ The severity check has to be there even though it looks redundant next to the
 mask. Every capability bit does have a severity, so for the assets in the table
 above the mask appears to subsume it — right up to an asset like DOGE whose
 severity comes from somewhere the mask cannot see.
+
+The whole `assert_safe` judgment — staleness, then the ceiling, then the
+mask — is also packaged in the crate as `assay_gate::check_policy`, which
+returns which of the three refusals applies. The example gate in this
+repository uses it (see
+[`contracts/example-gate`](../assay-contracts/contracts/example-gate)); the
+explicit version above stays here because reading the three checks spelled out
+is the fastest way to see why none of them is redundant.
 
 On choosing `MAX_ATTESTATION_AGE`: [freshness.md](freshness.md) measures how
 often issuer flags actually change, names the use classes that need different
@@ -370,6 +384,82 @@ The command reads the registry through the same simulated `get_safety` call
 registry id and network default to the live testnet deployment recorded in
 [deployment.md](deployment.md); override with `ASSAY_CONTRACT_ID` and
 `ASSAY_NETWORK` to verify against another deployment.
+## Indexing registry events
+
+An indexer is what notices a withdrawn attestation: `get_safety` returns `None`
+for both never-attested and revoked, and an overwrite replaces the old value in
+storage. The events are the only record of either. The shapes are specified in
+[contract-interface.md](contract-interface.md#attestation-events); this is how to
+consume them.
+
+### What to subscribe to
+
+Filter on the registry contract id and the two-topic layout `(label, asset)`:
+
+| Event | Topic 0 | Topic 1 | Data (a `Map<Symbol, _>`) |
+| --- | --- | --- | --- |
+| attest (one per `attest`, and one per element of `attest_many`, in batch order) | `Symbol("attest")` | asset SAC `Address` | `severity: u32`, `flags: u32`, `attested_at: u64` |
+| revoke | `Symbol("revoke")` | asset SAC `Address` | `revoked_at: u64` |
+
+A `revoke` is the only signal that an attestation was withdrawn on purpose.
+Storage archival publishes **no** event: an archived attestation is restored on
+access and reads back unchanged, so an asset that has gone quiet is not a
+revoked asset. Treat an asset as revoked only after seeing its `revoke` event,
+and as currently attested only if its latest event is an `attest`. Rejected
+calls publish nothing, so every event you see is a write that happened.
+
+### A worked `getEvents` request
+
+Topic filters take base64 XDR `ScVal`s, and `*` matches any single topic. The
+real values: `Symbol("attest")` is `AAAADwAAAAZhdHRlc3QAAA==`, `Symbol("revoke")` is
+`AAAADwAAAAZyZXZva2UAAA==`, and the asset topic below is the testnet SAC address
+`CDJF2JQINO7WRFXB2AAHLONFDPPI4M3W2UM5THGQQ7JMJDIEJYC4CMPG` (AQUA, see
+[section 5](#5-look-up-an-assets-address)). This request returns every attest and
+revoke for that asset on the testnet registry, starting from a ledger you choose:
+
+```sh
+curl -s https://soroban-testnet.stellar.org -H 'content-type: application/json' -d '{
+  "jsonrpc": "2.0", "id": 1, "method": "getEvents",
+  "params": {
+    "startLedger": 3000000,
+    "filters": [{
+      "type": "contract",
+      "contractIds": ["CBK4FBIHMDTXCUPE4E3ZDVSFJSCY5FJETTKNIQPN4LFJIKKIBLKIXQ73"],
+      "topics": [["*", "AAAAEgAAAAHSXSYIa79oluHQAHW5pRvejjN21RnZnNCH0sSNBE4FwQ=="]]
+    }],
+    "pagination": { "limit": 200 }
+  }
+}'
+```
+
+The second topic above is the XDR for a contract address (`ScVal` type 18,
+address type 1, then the 32 raw bytes of the SAC id). Build it for your asset
+rather than copying it: `assay registry-history` does the whole round trip and
+is the reference implementation (`cmd/assay/registry_history.go`).
+
+```sh
+assay registry-history AQUA-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA
+```
+
+Each result has `ledger`, `ledgerClosedAt`, `topic[]`, `value` (the data map as
+XDR), `txHash` and a `cursor` to pass back in `pagination.cursor` for the next
+page. Pages come back in ledger order.
+
+### Retention: what you cannot see
+
+`getEvents` is served from the RPC node's own window of recent ledgers, not from
+the chain forever. `getHealth` reports `oldestLedger`, `latestLedger` and
+`ledgerRetentionWindow`; the stellar-rpc default window is 17,280 ledgers (about
+24 hours) and hosted providers choose their own. A request with `startLedger`
+older than `oldestLedger` is rejected, and anything before it is simply absent.
+
+So an indexer that starts late, or that is down for longer than the window,
+**has a gap it cannot refill from RPC**. An empty result means "no events in the
+window", not "never attested". Run the indexer continuously, persist the last
+processed ledger and cursor, and archive events yourself if you need a history
+longer than your RPC's window. The registry's own retention note is in
+[contract-interface.md](contract-interface.md#attestation-events).
+
 ## Before you rely on this
 
 - It is on **testnet**, not pubnet.

@@ -184,7 +184,15 @@ checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 name = "assay-example-gate"
 version = "0.1.0"
 dependencies = [
+ "assay-gate",
  "assay-safety-registry",
+ "soroban-sdk",
+]
+
+[[package]]
+name = "assay-gate"
+version = "0.1.0"
+dependencies = [
  "soroban-sdk",
 ]
 

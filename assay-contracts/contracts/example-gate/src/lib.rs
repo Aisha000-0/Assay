@@ -3,8 +3,12 @@
 //!
 //! This is the smallest contract that refuses to accept a deposit in an asset
 //! whose issuer can take it back. It exists to be copied: everything an
-//! integrator needs is in this file, and it depends on nothing from Assay at
-//! build time — only on the deployed registry's interface, declared below.
+//! integrator needs is either in this file or in the `assay-gate` crate it
+//! depends on — the registry interface, the `Safety` type and the bit
+//! constants live there, versioned with the registry's ABI, so this example
+//! keeps no private copy that can drift from the deployed registry. At build
+//! time it depends only on that interface crate; at run time it still talks to
+//! a deployed registry address it was constructed with.
 //!
 //! It is deliberately not a vault. It stores a balance and nothing else, so
 //! the only thing worth reading here is the gate.
@@ -12,39 +16,20 @@
 //! See `docs/integrating.md` for the deployed testnet registry address and the
 //! deploy command that wires it in.
 
-use soroban_sdk::{
-    contract, contractclient, contracterror, contractimpl, contracttype, Address, BytesN, Env,
+use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env};
+
+// ---------------------------------------------------------------------------
+// The registry interface, as an integrator consumes it.
+// ---------------------------------------------------------------------------
+
+// The `Safety` type, `SafetyRegistryClient` and the `MECH_*` bits come from
+// the `assay-gate` crate — the interface a third-party integrator depends on
+// (#469). Re-declaring them here is how copy-pasted gates end up calling a
+// different ABI than the one deployed. `Safety` is not named below: it
+// arrives as the client's return type.
+use assay_gate::{
+    check_policy, PolicyViolation, SafetyRegistryClient, MECH_AUTH_REVOCABLE, MECH_CLAWBACK_ENABLED,
 };
-
-// ---------------------------------------------------------------------------
-// The registry interface, as an integrator declares it.
-// ---------------------------------------------------------------------------
-
-/// Mirror of the registry's stored attestation.
-///
-/// Field names and types are ABI: they must match the registry exactly, because
-/// a `#[contracttype]` struct crosses the contract boundary as a map keyed by
-/// these names.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Safety {
-    pub severity: u32,
-    pub flags: u32,
-    pub evidence_hash: BytesN<32>,
-    pub attested_at: u64,
-}
-
-/// The part of the registry this gate calls.
-#[contractclient(name = "SafetyRegistryClient")]
-pub trait SafetyRegistry {
-    fn get_safety(env: Env, asset: Address) -> Option<Safety>;
-    fn is_safe(env: Env, asset: Address, max_severity: u32, max_age_secs: u64) -> bool;
-}
-
-/// The issuer can confiscate a holder's balance outright (`1 << 2`).
-pub const MECH_CLAWBACK_ENABLED: u32 = 1 << 2;
-/// The issuer can freeze a holder's balance (`1 << 1`).
-pub const MECH_AUTH_REVOCABLE: u32 = 1 << 1;
 
 /// Mechanics this gate refuses outright, whatever the severity number says.
 ///
@@ -221,32 +206,36 @@ impl ExampleGate {
             .instance()
             .get(&DataKey::MaxAttestationAge)
             .unwrap_or(DEFAULT_MAX_ATTESTATION_AGE);
-        if env.ledger().timestamp().saturating_sub(safety.attested_at) > max_age {
-            return Err(Error::AttestationStale);
-        }
-
         let max_severity = env
             .storage()
             .instance()
             .get(&DataKey::MaxSeverity)
             .unwrap_or(DEFAULT_MAX_SEVERITY);
-        // Severity ceiling. Without this, an asset that is critical purely by
-        // reputation — no capability bits set — passes the mask below and is
-        // admitted. See DOGE in the module docs and docs/integrating.md.
-        if safety.severity > max_severity {
-            return Err(Error::SeverityTooHigh);
-        }
-
         let refused_mechanics = env
             .storage()
             .instance()
             .get(&DataKey::RefusedMechanics)
             .unwrap_or(DEFAULT_REFUSED_MECHANICS);
-        if safety.flags & refused_mechanics != 0 {
-            return Err(Error::IssuerCanTakeIt);
-        }
 
-        Ok(())
+        // The judgment half lives in the assay-gate crate (#469): staleness
+        // first, then the severity ceiling — without which an asset that is
+        // critical purely by reputation passes the mask and is admitted (see
+        // DOGE in the module docs and docs/integrating.md) — then the
+        // refused-mechanics mask. Mapping the violation back to this
+        // contract's error keeps every refusal path exactly where a caller
+        // already knows to look.
+        check_policy(
+            &safety,
+            env.ledger().timestamp(),
+            max_severity,
+            max_age,
+            refused_mechanics,
+        )
+        .map_err(|violation| match violation {
+            PolicyViolation::AttestationStale => Error::AttestationStale,
+            PolicyViolation::SeverityTooHigh => Error::SeverityTooHigh,
+            PolicyViolation::IssuerCanTakeIt => Error::IssuerCanTakeIt,
+        })
     }
 }
 
