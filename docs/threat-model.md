@@ -173,8 +173,14 @@ severity — reputation moved an asset *down*, which
   reports capability and evidence changes between consecutive scans. A consumer
   that needs to know an asset *was* escalated can see that it was.
 
-Residual risk accepted: a consumer reading only the current attestation sees the
-lower level with no indication that it was ever higher.
+Residual risk accepted, pending implementation: a consumer reading only the
+current attestation sees the lower level with no indication that it was ever
+higher. [docs/ever-escalated-marker.md](ever-escalated-marker.md) records the
+design decision — a stored, monotone maximum historical severity exposed through
+a read-only entrypoint — which closes the gap by letting a gate refuse assets
+that were once critical. Implementation is held for sign-off on that design;
+this entry moves from "accepted" to "defended" only when the code and its test
+land.
 
 #### 5. Downgrade by removing a check from the engine
 

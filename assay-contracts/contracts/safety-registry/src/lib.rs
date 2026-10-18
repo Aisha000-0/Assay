@@ -81,6 +81,18 @@ pub const POLICY_MASK_CONFISCATION_ONLY: u32 = MECH_CLAWBACK_ENABLED;
 /// issuer uses this mask.
 pub const POLICY_MASK_FREEZE_INCLUSIVE: u32 = MECH_AUTH_REVOCABLE | MECH_CLAWBACK_ENABLED;
 
+/// The contract's interface version, bumped on every ABI change.
+///
+/// Consumers and drift tooling can ask "what is this contract?" by calling
+/// [`Self::version`] instead of inferring the interface from a wasm hash.
+///
+/// Bump this whenever the entrypoint set, the [`Safety`] or [`Attestation`]
+/// shapes, the error codes, or the event schema change. Additive read-only
+/// entrypoints do not require a bump; removing or renaming one does. Adding
+/// this entrypoint itself establishes version 1: the interface as of this
+/// build is version 1, and the first ABI change after it bumps to 2.
+pub const INTERFACE_VERSION: u32 = 1;
+
 /// Event emitted on every successful `attest` write. Rejected attestations
 /// (`InvalidSeverity`, `InconsistentAttestation`, unauthorized caller) publish
 /// nothing, so observers never see writes that did not happen.
@@ -623,6 +635,41 @@ impl SafetyRegistry {
     /// `attested_at`) or fails the transaction. See `docs/deployment.md`.
     pub fn get_safety(env: Env, asset: Address) -> Option<Safety> {
         env.storage().persistent().get(&DataKey::Safety(asset))
+    }
+
+    /// Returns the contract's interface version, bumped on every ABI change.
+    ///
+    /// A consumer or a drift script can call this to learn what the contract
+    /// is rather than inferring it from a wasm hash. See [`INTERFACE_VERSION`]
+    /// for the bump rule.
+    pub fn version(_env: Env) -> u32 {
+        INTERFACE_VERSION
+    }
+
+    /// Reads the attestations for `assets`, returning one `Option<Safety>` per
+    /// asset in the same order the assets were given.
+    ///
+    /// An asset that was never attested, or whose attestation was revoked,
+    /// reads as `None`. A missing asset never fails the whole call: only the
+    /// bound can reject it.
+    ///
+    /// # Bound
+    ///
+    /// At most [`MAX_BATCH_SIZE`] assets are accepted; a longer vector returns
+    /// [`Error::BatchTooLarge`] and reads nothing. The bound mirrors
+    /// [`Self::attest_many`]'s so one number governs both directions of the
+    /// batch, and the read cost at the bound is pinned by
+    /// `get_safety_many_cost_at_the_bound`.
+    pub fn get_safety_many(env: Env, assets: Vec<Address>) -> Result<Vec<Option<Safety>>, Error> {
+        if assets.len() > MAX_BATCH_SIZE {
+            return Err(Error::BatchTooLarge);
+        }
+
+        let mut results = Vec::new(&env);
+        for asset in assets.iter() {
+            results.push_back(Self::get_safety(env.clone(), asset.clone()));
+        }
+        Ok(results)
     }
 
     /// The fail-closed gate helper.

@@ -51,6 +51,11 @@ pub struct Safety {
 #[contractclient(name = "SafetyRegistryClient")]
 pub trait SafetyRegistry {
     fn get_safety(env: Env, asset: Address) -> Option<Safety>;
+    /// The contract's interface version, bumped on every ABI change
+    /// ([docs/contract-interface.md](../../docs/contract-interface.md)). A
+    /// consumer or drift script can call this to learn what the contract is
+    /// instead of inferring it from a wasm hash.
+    fn version(env: Env) -> u32;
     fn is_safe(env: Env, asset: Address, max_severity: u32, max_age_secs: u64) -> bool;
 }
 

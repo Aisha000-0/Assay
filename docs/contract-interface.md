@@ -52,11 +52,17 @@ pub struct Attestation {
     pub evidence_hash: BytesN<32>,
 }
 
-/// The largest batch attest_many accepts. The cap is derived from the
-/// live transaction resource limits; see "attest_many" below.
+/// The largest batch attest_many and get_safety_many accept. The cap is
+/// derived from the live transaction resource limits; see "attest_many" below.
 pub const MAX_BATCH_SIZE: u32 = 50;
 
+/// The contract's interface version, bumped on every ABI change. See
+/// "Interface versioning" below for the bump rule.
+pub const INTERFACE_VERSION: u32 = 1;
+
 pub fn get_safety(env: Env, asset: Address) -> Option<Safety>;
+pub fn version(env: Env) -> u32;
+pub fn get_safety_many(env: Env, assets: Vec<Address>) -> Result<Vec<Option<Safety>>, Error>;
 pub fn is_safe(env: Env, asset: Address, max_severity: u32, max_age_secs: u64) -> bool;
 pub fn is_safe_masked(env: Env, asset: Address, forbidden_mask: u32, max_age_secs: u64) -> bool;
 pub fn attest(env: Env, asset: Address, severity: u32, flags: u32, evidence_hash: BytesN<32>) -> Result<(), Error>;
@@ -72,6 +78,29 @@ than assumed: `stellar contract info interface` on the compiled wasm publishes
 `fn attest_many(env: soroban_sdk::Env, attestations: soroban_sdk::Vec<Attestation>)`
 with `Attestation` as a contracttype UDT, so a `Vec` of a `#[contracttype]`
 struct is a supported argument type in soroban-sdk 27.
+
+## Interface versioning
+
+`version()` is a read-only entrypoint that returns the contract's interface
+version (`INTERFACE_VERSION`), currently `1`. A consumer or a drift script can
+call it to ask "what is this contract?" instead of inferring the interface from
+a wasm hash.
+
+### The bump rule
+
+`INTERFACE_VERSION` is bumped by exactly one on every ABI change:
+
+- **Bump:** adding, removing, or renaming an entrypoint; changing an
+  entrypoint's signature; changing the [`Safety`] or [`Attestation`] shapes;
+  changing an error code; changing the event schema.
+- **No bump:** purely additive read-only entrypoints that old consumers can
+  safely ignore (a new `get_safety_many` does not break an existing
+  `get_safety` caller), and documentation-only changes.
+
+Adding `version()` itself establishes version 1: the interface as of this
+build is version 1, and the first ABI change after it bumps to 2. The constant
+is an ABI value and is parsed by the Go ABI drift test, so it cannot drift from
+the deployed interface without a red build.
 
 | Error | Code | Returned by |
 | --- | --- | --- |
@@ -170,6 +199,31 @@ when each scan ran, and the elements of one call were written at the same
 instant. If the same asset appears twice in a batch, both are applied in order
 and both events are published, with the second write winning — exactly what two
 calls to `attest` would have done.
+
+### `get_safety_many`: bounded batch read
+
+`get_safety_many(assets)` returns one `Option<Safety>` per asset, in the same
+order the assets were given, for up to [`MAX_BATCH_SIZE`] assets in one call.
+An asset that was never attested, or whose attestation was revoked, reads as
+`None`; a missing asset never fails the whole call.
+
+#### Bound
+
+At most [`MAX_BATCH_SIZE`] assets are accepted; a longer vector returns
+[`Error::BatchTooLarge`] and reads nothing. A batch read larger than the cap is
+an error rather than a truncation on purpose: a caller that asked for N answers
+and got fewer would not know which assets went unread.
+
+The bound mirrors `attest_many`'s so one number governs both directions of the
+batch, and the read cost at the bound is pinned by
+`get_safety_many_cost_at_the_bound`.
+
+#### Never error the whole call because one asset is missing
+
+Within the bound, `get_safety_many` never returns an error: unattested and
+revoked assets read as `None`, and the caller learns per-asset which assets have
+no standing claim. This keeps a consumer that gates several collateral assets
+from failing entirely because one of them was never scanned.
 
 ### `revoke`: withdrawing an attestation
 

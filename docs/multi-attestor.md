@@ -236,13 +236,74 @@ signing, removes the one-key-on-one-machine exposure immediately. It is not
 the end state, because it cannot show disagreement and still trusts whoever
 builds the transaction.
 
+## Decision: the aggregation rule is conservative max/union only
+
+**Decision: consumers may not choose strict M-exactly-agree aggregation. The
+registry offers conservative max/union aggregation, and nothing else.**
+
+This is the second open question in this document, now closed. The comparison
+below is argued against concrete consumers — a vault that accepts several
+collateral assets in one call (the batch read in [#331]), and the example gate
+that admits a deposit only below a severity ceiling ([integrating.md]) — rather
+than in the abstract.
+
+### Conservative max/union (offered)
+
+Require at least M responding attestors. The result takes the **highest**
+severity and the **union** of flags among all responding attestors, and reports
+Contested when they differ while still returning the conservative result for
+observers.
+
+- **Admission risk:** low. Danger can be raised, never lowered, which is the
+  same rule that already holds for severity inside one report
+  ([threat-model.md] #4). M compromised attestors cannot cause an admission as
+  long as one honest attestor in the consumer's set is responding: the maximum
+  wins. Forcing an admission requires M compromised attestors *and* every
+  honest attestor to be non-responding within the window — a strictly stronger
+  condition than M-of-N agreement.
+- **Denial of service:** visible and acceptable. A compromised attestor can
+  raise severity or add flags, which refuses, or stay silent, which counts
+  toward Unavailable. Both fail closed; neither admits a dangerous asset.
+- **Consumer complexity:** low. One rule: "the worst case among responders is
+  the answer." A vault gating several collaterals reads one conservative result
+  per asset and never has to interpret an agreement threshold.
+
+### Strict M-exactly-agree (not offered)
+
+Require M responding attestors to agree exactly on severity and flags; treat
+any difference as Contested with no result.
+
+- **Admission risk:** higher. M compromised attestors that agree on a low
+  severity cause an admission outright — a coordinated minority can override
+  every honest attestor in the set. That violates the narrow property this
+  work exists to enforce: no single compromised party, and here not even a
+  minority coalition, may cause an admission.
+- **Denial of service:** more frequent. Any disagreement pushes the asset into
+  Contested with no result, so a single buggy or divergent attestor refuses
+  the asset for every consumer that names it. Conservative reports the same
+  disagreement *alongside* a safe answer, so observers still see it without a
+  total refusal.
+- **Consumer complexity:** higher. Consumers must understand agreement
+  thresholds, distinguish Contested from Unavailable, and decide which
+  attestor set to retry with — two rules instead of one double the surface a
+  consumer can misconfigure ([#330]).
+
+### Why #153's consumer research does not change this
+
+Issue #153's consumer research was not available in-repo when this decision was
+recorded, so the argument rests on the concrete consumers above and on the
+threat model's asymmetry: an admission puts funds at risk, a refusal does not.
+Conservative aggregation is the rule that never lowers danger on the say-so of
+a minority, so it is the one offered.
+
+The open-questions list below is updated accordingly: the aggregation rule is
+no longer open.
+
 ## What an implementation issue for C must decide
 
 These are left open on purpose. They need maintainer answers before code:
 
 - The attestor cap and the measured read budget at that cap.
-- Whether the strict exact-agreement rule is offered alongside the
-  conservative one, or conservative only.
 - The migration path from `Safety(asset)` storage, and how long single-attestor
   reads remain.
 - Whether Assay publishes a recommended default attestor set, and who the

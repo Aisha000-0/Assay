@@ -1465,3 +1465,148 @@ fn attest_many_is_all_or_nothing_over_generated_batches() {
         "the generator must reach both ends of a batch (seed={seed})"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Interface version (#332) and batch read (#331)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn version_returns_interface_version() {
+    let (_env, client, _admin) = setup();
+    assert_eq!(client.version(), INTERFACE_VERSION);
+}
+
+/// The interface version is an ABI constant: it starts at 1 and only moves on
+/// a deliberate ABI change, which must be mirrored in docs/contract-interface.md.
+#[test]
+fn interface_version_is_abi() {
+    assert_eq!(INTERFACE_VERSION, 1);
+}
+
+/// Results come back in the order the assets were asked for, and an asset that
+/// was never attested reads as `None` without failing the whole call.
+#[test]
+fn get_safety_many_preserves_order_and_none_for_missing() {
+    let (env, client, _admin) = setup();
+    env.ledger().set_timestamp(1_000);
+
+    let first = Address::generate(&env);
+    let second = Address::generate(&env);
+    let missing = Address::generate(&env);
+
+    client.attest(&first, &SEVERITY_MEDIUM, &MECH_AUTH_REVOCABLE, &hash(&env));
+    client.attest(&second, &SEVERITY_CLEAR, &0, &hash(&env));
+
+    // `get_safety_many` returns the `Vec` directly (contract errors trap), so
+    // no `.expect()`: a batch within the bound always yields one answer per
+    // asset asked for, in order, with `None` for assets that were never
+    // attested or were revoked.
+    let got = client.get_safety_many(&vec![&env, first.clone(), missing.clone(), second.clone()]);
+    let expected = vec![
+        &env,
+        client.get_safety(&first),
+        None,
+        client.get_safety(&second),
+    ];
+    assert_eq!(got, expected);
+    assert_eq!(got.len(), 3u32);
+}
+
+/// A revoked asset reads as `None` in a batch too, and does not fail the call.
+#[test]
+fn get_safety_many_revoked_reads_as_none() {
+    let (env, client, _admin) = setup();
+    let asset = Address::generate(&env);
+
+    client.attest(&asset, &SEVERITY_CLEAR, &0, &hash(&env));
+    client.revoke(&asset);
+
+    let got = client.get_safety_many(&vec![&env, asset.clone()]);
+    assert_eq!(got.len(), 1u32);
+    assert_eq!(got.get(0u32), Some(None));
+}
+
+/// One asset over the cap is rejected outright: a batch read is bounded the
+/// same way `attest_many` is, and nothing is silently dropped.
+#[test]
+fn get_safety_many_over_the_bound_is_rejected() {
+    let (env, client, _admin) = setup();
+    let asset = Address::generate(&env);
+
+    let mut oversized = Vec::new(&env);
+    for _ in 0..=MAX_BATCH_SIZE {
+        oversized.push_back(asset.clone());
+    }
+    assert_eq!(oversized.len(), MAX_BATCH_SIZE + 1);
+
+    let err = client
+        .try_get_safety_many(&oversized)
+        .expect_err("a batch read larger than the cap must be rejected");
+    assert_eq!(err, Ok(Error::BatchTooLarge));
+
+    // The rejection reads nothing: the asset is still unattested.
+    assert_eq!(client.get_safety(&asset), None);
+}
+
+/// Exactly `MAX_BATCH_SIZE` assets are accepted, and every one is read back.
+#[test]
+fn get_safety_many_at_the_bound_is_accepted() {
+    let (env, client, _admin) = setup();
+    env.ledger().set_timestamp(1_234);
+
+    let mut assets = Vec::new(&env);
+    let mut batch = Vec::new(&env);
+    for _ in 0..MAX_BATCH_SIZE {
+        let asset = Address::generate(&env);
+        assets.push_back(asset.clone());
+        batch.push_back(att(&env, &asset, SEVERITY_CLEAR, 0));
+    }
+    assert_eq!(assets.len(), MAX_BATCH_SIZE);
+
+    client.attest_many(&batch);
+
+    let got = client.get_safety_many(&assets);
+    assert_eq!(got.len(), MAX_BATCH_SIZE);
+
+    // Every batch answer matches the single-asset read for the same asset.
+    let mut expected = Vec::new(&env);
+    for asset in assets.iter() {
+        expected.push_back(client.get_safety(&asset));
+    }
+    assert_eq!(got, expected);
+}
+
+/// The read cost at the bound is measured against the network's invocation
+/// limits, the same way `attest_many`'s cap is measured.
+#[test]
+fn get_safety_many_cost_at_the_bound() {
+    let (env, client, _admin) = setup();
+    env.ledger().set_timestamp(1_234);
+
+    let mut assets = Vec::new(&env);
+    let mut batch = Vec::new(&env);
+    for _ in 0..MAX_BATCH_SIZE {
+        let asset = Address::generate(&env);
+        assets.push_back(asset.clone());
+        batch.push_back(att(&env, &asset, SEVERITY_CLEAR, 0));
+    }
+    client.attest_many(&batch);
+
+    // This call is itself an assertion: the host enforces the network's limits,
+    // so exceeding one panics here instead of on a real ledger.
+    let _ = client.get_safety_many(&assets);
+
+    let r = env.cost_estimate().resources();
+    let footprint = r.disk_read_entries + r.memory_read_entries + r.write_entries;
+
+    assert_eq!(
+        r.contract_events_size_bytes, 0,
+        "a read-only batch publishes no events"
+    );
+    assert!(footprint <= 400, "footprint entries {footprint} exceed 400");
+    assert!(
+        r.instructions <= 400_000_000,
+        "instructions exceed 400 000 000"
+    );
+    assert!(r.mem_bytes <= 41_943_040, "memory exceeds 41 943 040");
+}
