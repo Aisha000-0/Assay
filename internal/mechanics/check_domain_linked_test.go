@@ -212,3 +212,66 @@ func TestDomainInlineClaimStillVerified(t *testing.T) {
 		t.Fatalf("inline claim accountability = %v, want verified", f.Accountability)
 	}
 }
+
+// TestDomainLinkedClaimCarriesOrganisationAttribution: a verified claim is a
+// verified claim however it arrived, so the organisation the document
+// publishes (ORG_NAME / ORG_URL) is surfaced for a linked claim exactly as it
+// is for an inline one. The attribution is the catch: the fields were read from
+// the document home_domain itself, so the evidence URL must be the main
+// document's location and never the per-currency file the asset claim came
+// from — otherwise the reader is sent to a URL that did not publish them.
+func TestDomainLinkedClaimCarriesOrganisationAttribution(t *testing.T) {
+	s := linkedDomainSubject(t, `
+[DOCUMENTATION]
+ORG_NAME = "Centre Ltd"
+ORG_URL = "https://centre.example"
+`+linkedToml)
+	fetched := time.Date(2026, 9, 27, 0, 0, 5, 0, time.UTC)
+	s.TomlLinked = &sep1.LinkedResolution{
+		Attempted:  1,
+		Claimed:    true,
+		ClaimedURL: linkedURL,
+		Docs: []sep1.LinkedDoc{{
+			URL: linkedURL,
+			Doc: &sep1.Doc{
+				Currencies: []sep1.Currency{{Code: assetCode, Issuer: testIssuer}},
+				FetchedAt:  fetched,
+			},
+		}},
+	}
+
+	f := runLinkedDomain(t, s)
+	if f.Accountability == nil || *f.Accountability != mechanics.AccountabilityVerified {
+		t.Fatalf("accountability = %v, want verified", f.Accountability)
+	}
+	if f.Severity != mechanics.Clear {
+		t.Errorf("severity = %v, want Clear: attribution is never severity", f.Severity)
+	}
+
+	var found bool
+	for _, e := range f.Evidence {
+		if !strings.Contains(e.Claim, "ORG_NAME") {
+			continue
+		}
+		found = true
+		if e.Source != "stellar.toml" {
+			t.Errorf("organisation evidence source = %q, want stellar.toml", e.Source)
+		}
+		if e.URL != s.TomlURL {
+			t.Errorf("organisation evidence URL = %q, want the document that declared it %q", e.URL, s.TomlURL)
+		}
+		if e.URL == linkedURL {
+			t.Error("organisation fields were attributed to the linked file, which never published them")
+		}
+		if !strings.Contains(e.Claim, `ORG_NAME "Centre Ltd"`) ||
+			!strings.Contains(e.Claim, `ORG_URL "https://centre.example"`) {
+			t.Errorf("organisation claim does not carry both fields verbatim: %q", e.Claim)
+		}
+		if e.RetrievedAt.IsZero() {
+			t.Error("organisation evidence must carry the document's retrieval time")
+		}
+	}
+	if !found {
+		t.Fatalf("a verified linked claim carried no organisation attribution: %+v", f.Evidence)
+	}
+}

@@ -240,9 +240,31 @@ type Currency struct {
 	Toml string `toml:"toml"`
 }
 
+// Documentation is the toml's [DOCUMENTATION] table: where SEP-0001 puts the
+// organisation's own description of itself. Assay reads only the two fields a
+// report attributes — ORG_NAME and ORG_URL — and reads them exactly as
+// published.
+type Documentation struct {
+	// OrgName is the name the organisation gives itself (ORG_NAME).
+	OrgName string `toml:"ORG_NAME"`
+	// OrgURL is where it points readers for more about itself (ORG_URL). It is
+	// deliberately not validated as a URL: this is a relay of the document's
+	// own words, not a fetch target, and Assay never dereferences it.
+	OrgURL string `toml:"ORG_URL"`
+}
+
 // Doc is the subset of stellar.toml that Assay reads.
 type Doc struct {
 	Currencies []Currency `toml:"CURRENCIES"`
+	// Documentation is the [DOCUMENTATION] table, which is where SEP-0001
+	// defines the organisation fields (ORG_NAME / ORG_URL) — not the document
+	// root. They are parsed so the domain check can relay them as attributed
+	// evidence — the report should say who claims to be behind an asset, and
+	// that claim is the toml's, not Assay's — and for no other purpose. Both
+	// fields are issuer-controlled free text, quoted and escaped downstream
+	// like every other issuer-controlled string, and never interpreted by
+	// Assay; each is empty when the document does not declare it.
+	Documentation Documentation `toml:"DOCUMENTATION"`
 	// URL is the location the document was actually fetched from, after
 	// redirects. It can differ from the requested URL.
 	URL string `toml:"-"`
