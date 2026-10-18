@@ -29,6 +29,9 @@ on:
 
 permissions:
   contents: read
+  # The notification step below opens/closes the workflow's tracking issue on
+  # scheduled runs (#277). Nothing else in this workflow writes anywhere.
+  issues: write
 
 jobs:
   check-deployment:
@@ -42,11 +45,13 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - name: check docs/deployment.md against the chain
+        id: check
         run: |
           set +e
           ./scripts/check-deployment.sh 2>&1 | tee drift.log
           rc=${PIPESTATUS[0]}
           set -e
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
 
           {
             echo "### Deployment drift"
@@ -66,3 +71,39 @@ jobs:
             2) echo "::warning title=Deployment drift::Inconclusive: at least one check could not read the chain. Not a pass, not a failure; re-run when the endpoint recovers." ;;
             *) echo "::error title=Deployment drift::Drift found (exit $rc). See the log for the check and both values; docs/deployment.md needs updating or the deployment does."; exit 1 ;;
           esac
+
+      # Scheduled-run visibility (#277): a red scheduled run that nobody sees
+      # is the same silence this job exists to end, one level up. One tracking
+      # issue per workflow: opened on failure, commented on while inconclusive
+      # (exit 2), closed by the next green run. The issue pages no one; see
+      # scripts/notify-scheduled-failure.sh.
+      - name: notify on scheduled failure
+        if: ${{ !cancelled() && github.event_name == 'schedule' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ job.status }}" = "failure" ]; then
+            outcome=failure
+          elif [ "${{ steps.check.outputs.rc }}" = "2" ]; then
+            outcome=inconclusive
+          else
+            outcome=success
+          fi
+
+          # Name the failing step only when it is this workflow's check, not
+          # (say) an RPC timeout that fails the step for another reason.
+          step_args=()
+          if [ "${{ steps.check.outcome }}" = "failure" ]; then
+            step_args=(--step "check docs/deployment.md against the chain")
+          fi
+
+          summary_args=()
+          if [ -f drift.log ]; then
+            summary_args=(--summary-file drift.log)
+          fi
+
+          ./scripts/notify-scheduled-failure.sh \
+            --workflow "${{ github.workflow }}" \
+            --outcome "$outcome" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "${step_args[@]}" "${summary_args[@]}"

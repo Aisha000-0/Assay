@@ -175,33 +175,45 @@ produced by `assay attestation` from a live scan and submitted unmodified by
 eight further assets scanned but not attested, is in
 [attestation-run.md](attestation-run.md).
 
-| Asset | Severity | Flags | Mechanics | Attest transaction |
-| --- | --- | --- | --- | --- |
-| `AQUA` | 0 clear | `0` | — | `1b6bafc1226570b2415299f5531256716f4d8dc489a9784fcd6ea347d0f63f5f` |
-| `USDC` | 2 medium | `18` | `auth_revocable`, `domain_unverified` | `9869957e510ac6cb9ba4e5ffaff66ad0286e420e824efc0095d9e578be37564e` |
-| `USDZ` | 3 high | `6` | `auth_revocable`, `auth_clawback_enabled` | `069d519fa20c472bbc3756291307fb30719219903c1e62a27b4967c0b07ecfd6` |
-| `BERKSHIRE` | 4 critical | `54` | `auth_revocable`, `auth_clawback_enabled`, `domain_unverified`, `blocklisted` | `322f4bb5fcc84cea9231b7d12e0a964a304a7bd4ea78f97991ca335426e5e2ff` |
-| `ARST` | 0 clear | `0` | — | `f497b91ab84340bcb7418940e620d080c8566e0cdf27346c8d74e165b5d66506` |
-| `USDGLO` | 3 high | `6` | `auth_revocable`, `auth_clawback_enabled` | `6016ed7d908cd20237f114b0cb6778886027ddc8336952acb77ddbeff16caf42` |
-| `DOGE` | 4 critical | `48` | `domain_unverified`, `blocklisted` | `ac1a89a64159e6ac2e9ed61bd67a79cd1584287cf57d19f9dc188d80e81298a6` |
-| `VELO` | 0 clear | `16` | `domain_unverified` | `dcae1dd810f3e310e71e006f175857b12a8925e173e6d62d9f023ee91582e85b` |
-| `REPO` | 4 critical | `48` | `domain_unverified`, `blocklisted` | `a6b5fa3058c3f7f25cbf45b22603f721de7767e4b853e644932e72215eb940e0` |
-| `KALE` | 0 clear | `16` | `domain_unverified` | `db36e5ece6c52d01287da2bdb9722affab84047d58ec21a332edd9d1e7392c90` |
+| Asset | Severity | Flags | Mechanics | Attest transaction | Preimage |
+| --- | --- | --- | --- | --- | --- |
+| `AQUA` | 0 clear | `0` | — | `1b6bafc1226570b2415299f5531256716f4d8dc489a9784fcd6ea347d0f63f5f` | `v1` |
+| `USDC` | 2 medium | `18` | `auth_revocable`, `domain_unverified` | `9869957e510ac6cb9ba4e5ffaff66ad0286e420e824efc0095d9e578be37564e` | `v1` |
+| `USDZ` | 3 high | `6` | `auth_revocable`, `auth_clawback_enabled` | `069d519fa20c472bbc3756291307fb30719219903c1e62a27b4967c0b07ecfd6` | `v1` |
+| `BERKSHIRE` | 4 critical | `54` | `auth_revocable`, `auth_clawback_enabled`, `domain_unverified`, `blocklisted` | `322f4bb5fcc84cea9231b7d12e0a964a304a7bd4ea78f97991ca335426e5e2ff` | `v1` |
+| `ARST` | 0 clear | `0` | — | `f497b91ab84340bcb7418940e620d080c8566e0cdf27346c8d74e165b5d66506` | `v1` |
+| `USDGLO` | 3 high | `6` | `auth_revocable`, `auth_clawback_enabled` | `6016ed7d908cd20237f114b0cb6778886027ddc8336952acb77ddbeff16caf42` | `v1` |
+| `DOGE` | 4 critical | `48` | `domain_unverified`, `blocklisted` | `ac1a89a64159e6ac2e9ed61bd67a79cd1584287cf57d19f9dc188d80e81298a6` | `v1` |
+| `VELO` | 0 clear | `16` | `domain_unverified` | `dcae1dd810f3e310e71e006f175857b12a8925e173e6d62d9f023ee91582e85b` | `v1` |
+| `REPO` | 4 critical | `48` | `domain_unverified`, `blocklisted` | `a6b5fa3058c3f7f25cbf45b22603f721de7767e4b853e644932e72215eb940e0` | `v1` |
+| `KALE` | 0 clear | `16` | `domain_unverified` | `db36e5ece6c52d01287da2bdb9722affab84047d58ec21a332edd9d1e7392c90` | `v1` |
+
+Every row is `v1` because all ten attestations predate the later encodings:
+the first tranche was written 2026-08-15, the second 2026-09-05, and the third
+plus the AQUA and DOGE re-attestations 2026-09-16 — all before check-set
+binding (`v2`) landed on 2026-09-26 and network/scanner binding (`v3`) on
+2026-09-27. The short names are the preimage's first line without the
+`assay-evidence-` prefix: `v1` is `assay-evidence-v1`, and so on for `v2` and
+`v3`. A verifier recomputing any of these hashes must render the `v1`
+bytes described in [contract-interface.md](contract-interface.md); the
+`aqua-mainnet-onchain` vector under `internal/attest/testdata/vectors/` pins
+that encoding byte-for-byte to AQUA's on-chain hash. A future re-attestation
+under the current encoding would be `v3`, and this column is what says so.
 
 Issuers, SAC addresses, and the evidence hash each attestation commits to:
 
-| Asset | Issuer | Testnet SAC address | `evidence_hash` |
-| --- | --- | --- | --- |
-| `AQUA` | `GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA` | `CDJF2JQINO7WRFXB2AAHLONFDPPI4M3W2UM5THGQQ7JMJDIEJYC4CMPG` | `688453bd…61a4a9` |
-| `USDC` | `GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN` | `CA2E53VHFZ6YSWQIEIPBXJQGT6VW3VKWWZO555XKRQXYJ63GEBJJGHY7` | `e7fc765d…d790bd` |
-| `USDZ` | `GAKTLPC4ZV37SSCITQ5IS5AQ4WPF4CF4VZJQPPAROSGXMYOATF5U6XPR` | `CAOM5NKBTSGEXTZZKH3STWSFWURMODC3TZ4NS2THN7W5YUDFK3IOHIHU` | `ca9b13a6…65fb4d` |
-| `BERKSHIRE` | `GA22QHSHQEHDJS2ZOINSC77XPPQ24G5EFRJGVEIZLKC5FAW3PQ5XNSDQ` | `CALAZXOC32XF2DFRKDOFQK7XQETZZTUK7C2OKC6YKPX6KY2YWU2YSPQW` | `dc2bbf08…171a0d` |
-| `ARST` | `GCSAZVWXZKWS4XS223M5F54H2B6XPIIXZZGP7KEAIU6YSL5HDRGCI3DG` | `CBARCMJYRRNSYCWCR3EU2PEHAHWHBCQSMIKQIUSDWR3BK7CBCP622Q2R` | `82a6103f…fccacb` |
-| `USDGLO` | `GBBS25EGYQPGEZCGCFBKG4OAGFXU6DSOQBGTHELLJT3HZXZJ34HWS6XV` | `CDGBOKCE25PVUKFWST2EEK52NHRS5WQ7TN26DFJYCEQNZNROQRSPIBQA` | `69b8c4f8…7c27a5` |
-| `DOGE` | `GA22IDJNHUMC3XKUCCBFNTQIJOUBWINC5GCXHLJ2V6KZ3OWAXCULNQ7P` | `CDUV37BUTYKKWNGECZZNRYMM7JIQYYWAI7L2TPTXWQAEMIPG4SXRBRPD` | `396c9f7c…91647e` |
-| `VELO` | `GDM4RQUQQUVSKQA7S6EM7XBZP3FCGH4Q7CL6TABQ7B2BEJ5ERARM2M5M` | `CDHI6B6HBY2Q7BVGQ74C23GN3TKPGLCCMOSSRTEQDTTX4ELO5V6A6IOM` | `3ed390fe…49e02a` |
-| `REPO` | `GA2BVQLGAG6UJDPHHTJDQAPBUYJV7D6IWIISGJI2LMQXTOKMHO36EAZR` | `CBLZSCLVU3ZXRUJ3GEL7R3IP6CSN6VUEWPX7O4OYS3F3BYFUCJR7EEAA` | `4dacaa0f…43cede` |
-| `KALE` | `GAKJM27QTNLBBZ352HQ4IDR3GWXUXQUEBKBDWOJG7RBH2NVEWUNSYCEF` | `CCVNR6CGD6NFQG7XC6AVU5HF4YAPVXW5KZJCD73XFKUUO4YZUNEFKU2Z` | `874087f2…dc6112` |
+| Asset | Issuer | Testnet SAC address | `evidence_hash` | Preimage |
+| --- | --- | --- | --- | --- |
+| `AQUA` | `GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA` | `CDJF2JQINO7WRFXB2AAHLONFDPPI4M3W2UM5THGQQ7JMJDIEJYC4CMPG` | `688453bd…61a4a9` | `v1` |
+| `USDC` | `GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN` | `CA2E53VHFZ6YSWQIEIPBXJQGT6VW3VKWWZO555XKRQXYJ63GEBJJGHY7` | `e7fc765d…d790bd` | `v1` |
+| `USDZ` | `GAKTLPC4ZV37SSCITQ5IS5AQ4WPF4CF4VZJQPPAROSGXMYOATF5U6XPR` | `CAOM5NKBTSGEXTZZKH3STWSFWURMODC3TZ4NS2THN7W5YUDFK3IOHIHU` | `ca9b13a6…65fb4d` | `v1` |
+| `BERKSHIRE` | `GA22QHSHQEHDJS2ZOINSC77XPPQ24G5EFRJGVEIZLKC5FAW3PQ5XNSDQ` | `CALAZXOC32XF2DFRKDOFQK7XQETZZTUK7C2OKC6YKPX6KY2YWU2YSPQW` | `dc2bbf08…171a0d` | `v1` |
+| `ARST` | `GCSAZVWXZKWS4XS223M5F54H2B6XPIIXZZGP7KEAIU6YSL5HDRGCI3DG` | `CBARCMJYRRNSYCWCR3EU2PEHAHWHBCQSMIKQIUSDWR3BK7CBCP622Q2R` | `82a6103f…fccacb` | `v1` |
+| `USDGLO` | `GBBS25EGYQPGEZCGCFBKG4OAGFXU6DSOQBGTHELLJT3HZXZJ34HWS6XV` | `CDGBOKCE25PVUKFWST2EEK52NHRS5WQ7TN26DFJYCEQNZNROQRSPIBQA` | `69b8c4f8…7c27a5` | `v1` |
+| `DOGE` | `GA22IDJNHUMC3XKUCCBFNTQIJOUBWINC5GCXHLJ2V6KZ3OWAXCULNQ7P` | `CDUV37BUTYKKWNGECZZNRYMM7JIQYYWAI7L2TPTXWQAEMIPG4SXRBRPD` | `396c9f7c…91647e` | `v1` |
+| `VELO` | `GDM4RQUQQUVSKQA7S6EM7XBZP3FCGH4Q7CL6TABQ7B2BEJ5ERARM2M5M` | `CDHI6B6HBY2Q7BVGQ74C23GN3TKPGLCCMOSSRTEQDTTX4ELO5V6A6IOM` | `3ed390fe…49e02a` | `v1` |
+| `REPO` | `GA2BVQLGAG6UJDPHHTJDQAPBUYJV7D6IWIISGJI2LMQXTOKMHO36EAZR` | `CBLZSCLVU3ZXRUJ3GEL7R3IP6CSN6VUEWPX7O4OYS3F3BYFUCJR7EEAA` | `4dacaa0f…43cede` | `v1` |
+| `KALE` | `GAKJM27QTNLBBZ352HQ4IDR3GWXUXQUEBKBDWOJG7RBH2NVEWUNSYCEF` | `CCVNR6CGD6NFQG7XC6AVU5HF4YAPVXW5KZJCD73XFKUUO4YZUNEFKU2Z` | `874087f2…dc6112` | `v1` |
 
 `USDZ` is the case the [severity model](severity-model.md) exists to handle: a
 confiscation-capable issuer with a *verified* domain. It scores `high` on
@@ -473,7 +485,13 @@ scripts/check-deployment.sh --deployment /tmp/copy.md   # a copy, not this file
 
 It checks the registry and gate addresses, the wasm hash of the registry and of
 all three gate instances, the registry each gate was constructed with, and the
-severity, flags and evidence hash of all ten attestations — 21 checks. Chain
+severity, flags and evidence hash of all ten attestations — 21 checks. The
+`Preimage` column is validated while the tables are parsed: every row must name
+`v1`, `v2` or `v3`, and the two tables must agree for a given asset. It is not
+compared against the chain, because the chain stores only the hash; whether the
+named encoding reproduces that hash is what the
+[Reproducibility job](../CONTRIBUTING.md#the-reproducibility-job) tests by
+re-scanning. Chain
 state is read with one `getLedgerEntries` call, as in
 [Entry lifetime](#entry-lifetime) above, so it needs no `stellar` CLI and no
 transaction: restoring an archived entry is what a transaction would do, and

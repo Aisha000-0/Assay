@@ -22,6 +22,9 @@ on:
 
 permissions:
   contents: read
+  # The notification step below opens/closes the workflow's tracking issue on
+  # scheduled runs (#277). Nothing else in this workflow writes anywhere.
+  issues: write
 
 jobs:
   reproducibility:
@@ -44,11 +47,13 @@ jobs:
         run: go build -o assay ./cmd/assay
 
       - name: recompute attested evidence hashes
+        id: check
         run: |
           set +e
           ./scripts/reproducibility.sh 2>&1 | tee repro.log
           rc=${PIPESTATUS[0]}
           set -e
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
 
           {
             echo "### Reproducibility"
@@ -68,3 +73,40 @@ jobs:
             2) echo "::warning title=Reproducibility::Inconclusive: at least one scan could not complete. Not a pass, not a failure; re-run when sources recover." ;;
             *) echo "::error title=Reproducibility::Mismatch or script error (exit $rc). See the log for the asset and both hashes."; exit 1 ;;
           esac
+
+      # Scheduled-run visibility (#277): a red scheduled run that nobody sees
+      # is the same silence this job exists to end, one level up. One tracking
+      # issue per workflow: opened on failure, commented on while inconclusive
+      # (exit 2), closed by the next green run. Push/PR runs are unaffected
+      # (this step is schedule-only) and the issue pages no one; see
+      # scripts/notify-scheduled-failure.sh.
+      - name: notify on scheduled failure
+        if: ${{ !cancelled() && github.event_name == 'schedule' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ job.status }}" = "failure" ]; then
+            outcome=failure
+          elif [ "${{ steps.check.outputs.rc }}" = "2" ]; then
+            outcome=inconclusive
+          else
+            outcome=success
+          fi
+
+          # Name the failing step only when it is this workflow's check, not
+          # (say) a setup failure before it.
+          step_args=()
+          if [ "${{ steps.check.outcome }}" = "failure" ]; then
+            step_args=(--step "recompute attested evidence hashes")
+          fi
+
+          summary_args=()
+          if [ -f repro.log ]; then
+            summary_args=(--summary-file repro.log)
+          fi
+
+          ./scripts/notify-scheduled-failure.sh \
+            --workflow "${{ github.workflow }}" \
+            --outcome "$outcome" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "${step_args[@]}" "${summary_args[@]}"

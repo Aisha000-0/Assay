@@ -3,7 +3,10 @@
 #
 # That document is the record of what is deployed: the registry and gate
 # addresses, the three gate instances with their wasm hashes, and the ten
-# attestations with their severity, flags and evidence hash. It has drifted
+# attestations with their severity, flags, evidence hash and preimage encoding.
+# The preimage column is checked for presence and vocabulary (v1/v2/v3) and for
+# agreement between the two tables, but not against the chain — the chain
+# stores only the hash. It has drifted
 # before — the docs named a superseded gate after the redeploy, and an
 # unexplained duplicate instance existed before anything recorded it — and
 # drift is silent, because a stale document reads exactly like a correct one.
@@ -158,6 +161,22 @@ def leading_int(cell):
     return int(match.group()) if match else None
 
 
+def preimage_column(header):
+    """The zero-based index of the `Preimage` column, or None."""
+    return header.index("Preimage") if "Preimage" in header else None
+
+
+def set_preimage(entry, code, value):
+    """Records ONE asset's preimage encoding, refusing a disagreement between
+    the two tables that document it."""
+    if value in (None, ""):
+        return
+    recorded = entry.get("preimage")
+    if recorded is not None and recorded != value:
+        die(f"asset {code} names preimage {recorded} in one table and {value} in another")
+    entry["preimage"] = value
+
+
 def strkey_contract(digest_hex):
     """A 32-byte contract hash rendered as a C… strkey: version byte 16,
     the hash, then a CRC16-XMODEM over both, little-endian. The leading C of a
@@ -230,14 +249,21 @@ with open(DEPLOYMENT, encoding="utf-8") as handle:
                 if len(row) >= 4 and CONTRACT_RE.match(row[0]):
                     instances.append({"addr": row[0], "wasm": row[2], "bound": row[3]})
         elif "Asset" in header[0] and "Issuer" in head and "SAC" in head:
+            preimage_col = preimage_column(header)
             for row in rows:
                 if len(row) >= 4 and CODE_RE.match(row[0]):
-                    assets.setdefault(row[0], {}).update(sac=row[2], evidence=row[3])
+                    entry = assets.setdefault(row[0], {})
+                    entry.update(sac=row[2], evidence=row[3])
+                    if preimage_col is not None and preimage_col < len(row):
+                        set_preimage(entry, row[0], row[preimage_col])
         elif "Asset" in header[0] and "Severity" in head and "Flags" in head:
+            preimage_col = preimage_column(header)
             for row in rows:
                 if len(row) >= 3 and CODE_RE.match(row[0]):
-                    assets.setdefault(row[0], {}).update(severity=leading_int(row[1]),
-                                                          flags=leading_int(row[2]))
+                    entry = assets.setdefault(row[0], {})
+                    entry.update(severity=leading_int(row[1]), flags=leading_int(row[2]))
+                    if preimage_col is not None and preimage_col < len(row):
+                        set_preimage(entry, row[0], row[preimage_col])
         elif len(header) == 2 and "Asset" not in head:
             # The two live-address tables: a bolded row names the contract and
             # the next "Wasm hash" row belongs to it.
@@ -267,11 +293,16 @@ for inst in instances:
     if inst["bound"]:
         entry["bound"] = inst["bound"]
 
+PREIMAGE_VERSIONS = ("v1", "v2", "v3")
+
 registry_addr = next((addr for addr, e in contracts.items() if e["label"] == "registry"), None)
 for code, entry in assets.items():
-    for field in ("severity", "flags", "sac", "evidence"):
+    for field in ("severity", "flags", "sac", "evidence", "preimage"):
         if entry.get(field) in (None, ""):
             die(f"asset {code} has no documented {field}; the tables in {DEPLOYMENT} may have changed")
+    if entry["preimage"] not in PREIMAGE_VERSIONS:
+        die(f"asset {code} names an unknown preimage encoding "
+            f"{entry['preimage']!r}; expected one of {', '.join(PREIMAGE_VERSIONS)}")
 if not contracts or not assets or registry_addr is None:
     die(f"parsed {len(contracts)} contracts and {len(assets)} assets from {DEPLOYMENT}; "
         "the table format may have changed")
@@ -431,7 +462,7 @@ for addr, entry in sorted(contracts.items()):
         checks.append((f"registry-binding {label}", "bound", entry["bound"], instance_key))
 for code, entry in sorted(assets.items()):
     checks.append((f"attestation {code}", "attestation",
-                   (entry["severity"], entry["flags"], entry["evidence"]),
+                   (entry["severity"], entry["flags"], entry["evidence"], entry["preimage"]),
                    ledger_data_key(registry_addr, scval_safety_key(entry["sac"]))))
 
 keys = {}
@@ -530,7 +561,7 @@ for key, group in keys.items():
             if kind == "attestation":
                 report("absent", name,
                        f"documented severity {expected[0]}, flags {expected[1]}, evidence "
-                       f"{expected[2]}; no attestation entry on chain")
+                       f"{expected[2]}, preimage {expected[3]}; no attestation entry on chain")
             else:
                 report("invalid", name,
                        f"documented {expected}; on-chain: no contract at this address")
@@ -578,11 +609,11 @@ for key, group in keys.items():
             chain_severity = stored.get("severity", {}).get("u32")
             chain_flags = stored.get("flags", {}).get("u32")
             chain_evidence = stored.get("evidence_hash", {}).get("bytes")
-            doc_severity, doc_flags, doc_evidence = expected
+            doc_severity, doc_flags, doc_evidence, doc_preimage = expected
             if chain_severity is None and not chain_evidence:
                 report("absent", name,
                        f"documented severity {doc_severity}, flags {doc_flags}, evidence "
-                       f"{doc_evidence}; the entry on chain holds no attestation")
+                       f"{doc_evidence}, preimage {doc_preimage}; the entry on chain holds no attestation")
                 continue
             problems = []
             if chain_severity != doc_severity:
@@ -595,7 +626,8 @@ for key, group in keys.items():
                 report("invalid", name, "; ".join(problems))
             else:
                 report("valid", name,
-                       f"severity {doc_severity}, flags {doc_flags}, evidence {doc_evidence}")
+                       f"severity {doc_severity}, flags {doc_flags}, evidence {doc_evidence}, "
+                       f"preimage {doc_preimage}")
 
 finish()
 PY

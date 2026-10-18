@@ -244,6 +244,104 @@ ASSAY_STELLAREXPERT_URL=http://127.0.0.1:1 ./scripts/reproducibility.sh --attemp
 Two overrides exist for debugging; neither changes what the scanner checks,
 only where it fetches from.
 
+### Reproducible scanner builds
+
+`make build-release` builds the scanner as a function of the source alone:
+
+```sh
+CGO_ENABLED=0 go build -trimpath -buildvcs=false -o assay ./cmd/assay
+```
+
+Each flag removes one input that varies between machines. `-trimpath` writes
+file paths as the module path instead of the builder's absolute checkout
+directory. `-buildvcs=false` omits the VCS stamp (revision, commit time, dirty
+flag) that `go build` otherwise embeds when it runs inside a git checkout, so
+a build from a tarball and a build from a clone agree. `CGO_ENABLED=0` keeps
+the host's C toolchain and libc out of the result. The Go toolchain itself is
+pinned by `go.mod` (honored through `GOTOOLCHAIN`), so the remaining inputs
+are the source and these flags.
+
+CI's `reproducible-build` job proves the property rather than assuming it: it
+exports `HEAD` with `git archive` into two differently named directories,
+builds each with this target, and compares the two binaries. `git archive`,
+not `git clone`, because two clones carry different `.git` state — exactly the
+input `-buildvcs=false` removes.
+
+These flags deliberately do **not** stamp a version: a build from a checkout
+reports `devel` (see [Releasing](#releasing)). A version is attached only on
+the release path, where it is the point.
+
+### Releasing
+
+Releases are semver tags on `main`; the first is `v0.1.0`.
+`.github/workflows/release.yml` turns a tag into a GitHub release, and it
+refuses anything surprising rather than guessing:
+
+1. Cut an **annotated** tag on a commit that is on `main`:
+
+   ```sh
+   git tag -a vX.Y.Z -m 'assay vX.Y.Z' \
+       -m 'Preimage: assay-evidence-vN' \
+       -m 'ABI: unchanged (or: changed — which interface, and why)'
+   git push origin vX.Y.Z
+   ```
+
+   The message must contain a `Preimage: assay-evidence-vN` line naming the
+   encoding the scanner currently emits (see
+   [contract-interface.md](docs/contract-interface.md)) and an `ABI:` line
+   stating whether the contract interface changed. The workflow refuses a
+   lightweight tag, a tag off `main`, a non-semver name, or a message without
+   those lines — and the release notes are generated from them, so a release
+   always carries its compatibility statement.
+
+2. The workflow builds the artifact with
+
+   ```sh
+   go install -trimpath github.com/use-assay/assay/cmd/assay@vX.Y.Z
+   ```
+
+   This is the only build that stamps the tag as the module version — a plain
+   `go build` reports `(devel)` — and the stamp is verified before
+   publication with the check from issue #278:
+
+   ```sh
+   go version -m ./assay | grep mod
+   ```
+
+3. That stamp is also the scanner identity. `internal/version.Version` is read
+   from the binary's build info and `attest.ScannerIdentity` is initialized
+   from that variable, so for a tagged build the eval recorder's version, the
+   v3 preimage's `scanner` line, and `go version -m` are all the tag and
+   cannot disagree. A development build reports `devel` everywhere; that is
+   the honest answer, not a bug.
+
+If a release must be withdrawn, delete the release and the tag deliberately
+(`gh release delete`, `git push --delete`) rather than re-pointing the tag:
+the artifact's stamp names the tag, and anyone who installed it should be able
+to tell.
+
+### Failed scheduled runs
+
+The three scheduled workflows — Reproducibility, Security, and Deployment
+drift — report their outcome through a tracking issue instead of ending red
+into the void ([#277](https://github.com/use-assay/Assay/issues/277)). One
+issue per workflow, titled `Scheduled workflow failure: <workflow>` and
+labelled `scheduled-failure`: a failure opens it, or comments on it, with the
+failing step's log and a link to the run; an **inconclusive** run (exit 2,
+above) comments to say so and leaves it open, because "could not check" is not
+a failure; the next green run comments and closes it. Duplicates are collapsed
+into the oldest issue, so `is:issue is:open label:scheduled-failure` is always
+the current state of scheduled breakage.
+
+The mechanism is `scripts/notify-scheduled-failure.sh`, invoked by each
+workflow's last step with `GITHUB_TOKEN` (`issues: write`) and `gh` — no
+third-party action. The issue pages no one; paging and chat integrations are
+out of scope. Exercise it, against a stubbed `gh`, without touching GitHub:
+
+```sh
+make test-notify
+```
+
 ### Mutation testing: decision recorded
 
 **Decision (2026-09-27, issue #110): do not adopt mutation tooling in CI.

@@ -93,7 +93,10 @@ fi
 
 # Parse docs/deployment.md for CODE-ISSUER + expected evidence_hash.
 # The issuers table is the only one whose second column is a Stellar issuer
-# (G...) and whose fourth column is a hash fragment. Emit TSV:
+# (G...) and whose fourth column is a hash fragment. A fifth `Preimage` column
+# names the encoding (v1/v2/v3); it is validated by scripts/check-deployment.sh
+# and does not change what is recomputed here, so it is tolerated, not used.
+# Emit TSV:
 #   CODE-ISSUER<TAB>EXPECTED
 ASSETS_TSV="$(python3 - "$DEPLOYMENT" <<'PY'
 import re, sys
@@ -106,9 +109,9 @@ with open(path, encoding='utf-8') as f:
         if not line.startswith('|'):
             continue
         cols = [c.strip().strip('`').strip() for c in line.strip().strip('|').split('|')]
-        if len(cols) != 4:
+        if len(cols) < 4:
             continue
-        code, issuer, _sac, hashfrag = cols
+        code, issuer, _sac, hashfrag = cols[:4]
         if not issuer_re.match(issuer):
             continue
         if not hashfrag or len(hashfrag) < 4:

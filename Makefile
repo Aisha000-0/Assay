@@ -10,7 +10,8 @@ NETWORK ?= testnet
 SOURCE ?= assay-attester
 CONTRACT_ID ?= CBK4FBIHMDTXCUPE4E3ZDVSFJSCY5FJETTKNIQPN4LFJIKKIBLKIXQ73
 
-.PHONY: all build test cover lint fmt vet run clean offline-test \
+.PHONY: all build build-release test test-notify cover lint fmt vet run clean \
+	offline-test \
 	contract-test contract-lint contract-build \
 	build-contract deploy-testnet attest read verify-gate verify-wasm \
 	eval-record eval-compare
@@ -20,8 +21,35 @@ all: build
 build:
 	go build -o $(BINARY) ./cmd/assay
 
+# build-release builds the scanner under the flags that make the binary
+# reproducible from any directory on any machine:
+#
+#   -trimpath      removes absolute file system paths from the binary
+#   -buildvcs=false removes the working tree's VCS state (a dirty checkout
+#                  would otherwise stamp vcs.modified=true)
+#   CGO_ENABLED=0  removes the host C toolchain as an input
+#
+# The Go toolchain is pinned by go.mod, so the two inputs left are the source
+# and the flags. CI proves the property by building this target twice in
+# different directories and comparing hashes; see CONTRIBUTING.md
+# ("Reproducible scanner builds").
+#
+# Note: this does not stamp a version. A build from a checkout reports
+# ScannerIdentity "devel"; tagged releases are built by
+# .github/workflows/release.yml with `go install ...@<tag>`, which stamps the
+# tag. That split is deliberate: reproducibility of the local build and
+# version binding of a release are separate guarantees.
+build-release:
+	CGO_ENABLED=0 go build -trimpath -buildvcs=false -o $(BINARY) ./cmd/assay
+
 test:
 	go test -race $(PKG)
+
+# test-notify exercises scripts/notify-scheduled-failure.sh against a stubbed
+# gh, covering open/update/comment/close and the "exactly one issue" rule. CI
+# runs it alongside the merge-gate tests.
+test-notify:
+	bash ./scripts/test-notify-scheduled-failure.sh
 
 # cover prints the same per-package table CI puts in the job summary
 # (scripts/coverage-report.sh), lowest coverage first. It reports; it does not
