@@ -58,7 +58,6 @@ H_FOURTH="$(printf 'd%.0s' {1..64})"
 
 CONTROL="$TMPDIR/control.tsv"
 STUB_LOG="$TMPDIR/stub.log"
-DEPLOYMENT="$TMPDIR/deployment.md"
 export STUB_CONTROL="$CONTROL" STUB_LOG
 
 reset() {
