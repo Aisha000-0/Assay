@@ -12,6 +12,9 @@ on:
 
 permissions:
   contents: read
+  # The notification step below opens/closes the workflow's tracking issue on
+  # scheduled runs (#277). Nothing else in this workflow writes anywhere.
+  issues: write
 
 jobs:
   govulncheck:
@@ -32,9 +35,14 @@ jobs:
 
       # govulncheck is first-party (golang.org/x/vuln) and pinned: a floating
       # @latest would let the scanner's own behavior change between runs.
-      # It is invoked with `go run`, so nothing is added to go.mod.
+      # It is invoked with `go run`, so nothing is added to go.mod. The log is
+      # teed so a scheduled failure can quote it in the tracking issue (#277);
+      # pipefail keeps the step's exit status govulncheck's own.
       - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+        id: scan
+        run: |
+          set -o pipefail
+          go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./... 2>&1 | tee govulncheck.log
 
       # Issue semantics (#131): reachable findings fail the job (the step
       # above exits non-zero); findings present but not reachable are
@@ -48,3 +56,37 @@ jobs:
           echo "and call path; upgrade the toolchain or dependency that"
           echo "provides it. Advisories in packages or modules that this code"
           echo "does not call are informational and do not fail the scan."
+
+      # Scheduled-run visibility (#277): a red scheduled run that nobody sees
+      # is the same silence this job exists to end, one level up. One tracking
+      # issue per workflow: opened on failure, closed by the next green run.
+      # Push/PR runs are unaffected (this step is schedule-only) and the issue
+      # pages no one; see scripts/notify-scheduled-failure.sh.
+      - name: notify on scheduled failure
+        if: ${{ !cancelled() && github.event_name == 'schedule' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ job.status }}" = "failure" ]; then
+            outcome=failure
+          else
+            outcome=success
+          fi
+
+          # Name the failing step only when it is the scan, not a setup
+          # failure before it.
+          step_args=()
+          if [ "${{ steps.scan.outcome }}" = "failure" ]; then
+            step_args=(--step "govulncheck")
+          fi
+
+          summary_args=()
+          if [ -f govulncheck.log ]; then
+            summary_args=(--summary-file govulncheck.log)
+          fi
+
+          ./scripts/notify-scheduled-failure.sh \
+            --workflow "${{ github.workflow }}" \
+            --outcome "$outcome" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "${step_args[@]}" "${summary_args[@]}"
