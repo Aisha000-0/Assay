@@ -1,0 +1,363 @@
+[
+  {
+    "name": "v1-minimal-empty-checks-line",
+    "covers": [
+      "preimage",
+      "version-line",
+      "field-lines",
+      "asset-line",
+      "severity-line",
+      "base-severity-line",
+      "escalated-line",
+      "mechanics-line",
+      "accountability-line",
+      "accountability",
+      "checks-line"
+    ],
+    "notes": "Divergence #269: the encoder emits an empty checks line for a report with no bound check set; the spec prose and the on-chain v1 bytes have no checks line at all. Pinned as-emitted.",
+    "input": {
+      "accountability": "verified",
+      "asset": {
+        "code": "AQUA",
+        "issuer": "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA"
+      },
+      "base_severity": "clear",
+      "escalated": false,
+      "evidence": [],
+      "mechanics": [],
+      "schema_version": 1,
+      "severity": "clear"
+    },
+    "preimage": "assay-evidence-v1\nasset\tAQUA-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA\nseverity\t0\nbase_severity\t0\nescalated\tfalse\nmechanics\t0\naccountability\tverified\nchecks\t\n",
+    "digest": "94497c65d89ab7e196f80eeffd657843a6d2082b1b760238f9c3e147e68e9f81"
+  },
+  {
+    "name": "v1-one-evidence",
+    "covers": [
+      "evidence-line"
+    ],
+    "input": {
+      "accountability": "unverified",
+      "asset": {
+        "code": "AQUA",
+        "issuer": "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA"
+      },
+      "base_severity": "medium",
+      "escalated": false,
+      "evidence": [
+        {
+          "source": "horizon",
+          "url": "https://horizon.stellar.org/assets?asset_code=AQUA&asset_issuer=GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA",
+          "claim": "issuer flags: auth_required=false auth_revocable=true auth_immutable=false auth_clawback_enabled=false"
+        }
+      ],
+      "mechanics": [
+        "auth_revocable"
+      ],
+      "schema_version": 1,
+      "severity": "medium"
+    },
+    "preimage": "assay-evidence-v1\nasset\tAQUA-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA\nseverity\t2\nbase_severity\t2\nescalated\tfalse\nmechanics\t2\naccountability\tunverified\nchecks\t\nevidence\thorizon\thttps://horizon.stellar.org/assets?asset_code=AQUA&asset_issuer=GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA\tissuer flags: auth_required=false auth_revocable=true auth_immutable=false auth_clawback_enabled=false\n",
+    "digest": "881fce1f3f08c9e54253150da8940af5c9135996224e61343369562767ec5b75"
+  },
+  {
+    "name": "v2-check-set-sorted",
+    "covers": [
+      "check-list",
+      "check-id"
+    ],
+    "notes": "Check set given out of order in the input; the encoding sorts it.",
+    "input": {
+      "accountability": "unverified",
+      "asset": {
+        "code": "AQUA",
+        "issuer": "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA"
+      },
+      "base_severity": "medium",
+      "checks": [
+        "sep1-domain",
+        "capability",
+        "reputation",
+        "mutability"
+      ],
+      "escalated": false,
+      "evidence": [
+        {
+          "source": "horizon",
+          "url": "https://horizon.stellar.org/assets",
+          "claim": "flags observed"
+        }
+      ],
+      "mechanics": [
+        "auth_revocable"
+      ],
+      "schema_version": 1,
+      "severity": "medium"
+    },
+    "preimage": "assay-evidence-v2\nasset\tAQUA-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA\nseverity\t2\nbase_severity\t2\nescalated\tfalse\nmechanics\t2\naccountability\tunverified\nchecks\tcapability,mutability,reputation,sep1-domain\nevidence\thorizon\thttps://horizon.stellar.org/assets\tflags observed\n",
+    "digest": "fa283739d6802a929730dd0cd59e607de5dae196469e32aa66dd657b33831551"
+  },
+  {
+    "name": "v3-network-pubnet",
+    "covers": [
+      "network-line"
+    ],
+    "notes": "Network passphrase is bound verbatim, full string, after the checks line.",
+    "input": {
+      "accountability": "unverified",
+      "asset": {
+        "code": "AQUA",
+        "issuer": "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA"
+      },
+      "base_severity": "medium",
+      "checks": [
+        "capability",
+        "mutability",
+        "reputation",
+        "sep1-domain"
+      ],
+      "escalated": false,
+      "evidence": [
+        {
+          "source": "horizon",
+          "url": "https://horizon.stellar.org/assets",
+          "claim": "flags observed"
+        }
+      ],
+      "mechanics": [
+        "auth_revocable"
+      ],
+      "network": "Public Global Stellar Network ; September 2015",
+      "schema_version": 1,
+      "severity": "medium"
+    },
+    "preimage": "assay-evidence-v3\nasset\tAQUA-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA\nseverity\t2\nbase_severity\t2\nescalated\tfalse\nmechanics\t2\naccountability\tunverified\nchecks\tcapability,mutability,reputation,sep1-domain\nnetwork\tPublic Global Stellar Network ; September 2015\nevidence\thorizon\thttps://horizon.stellar.org/assets\tflags observed\n",
+    "digest": "9b54feac2b25945ede74b91e42fb55513c8d41c53e8038954b6d899d85b77f8c"
+  },
+  {
+    "name": "v3-network-testnet",
+    "covers": [
+      "network-line"
+    ],
+    "notes": "Contrast pair with v3-network-pubnet: byte-identical except the network line, so the digests differ only through the ledger named.",
+    "input": {
+      "accountability": "unverified",
+      "asset": {
+        "code": "AQUA",
+        "issuer": "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA"
+      },
+      "base_severity": "medium",
+      "checks": [
+        "capability",
+        "mutability",
+        "reputation",
+        "sep1-domain"
+      ],
+      "escalated": false,
+      "evidence": [
+        {
+          "source": "horizon",
+          "url": "https://horizon.stellar.org/assets",
+          "claim": "flags observed"
+        }
+      ],
+      "mechanics": [
+        "auth_revocable"
+      ],
+      "network": "Test SDF Network ; September 2015",
+      "schema_version": 1,
+      "severity": "medium"
+    },
+    "preimage": "assay-evidence-v3\nasset\tAQUA-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA\nseverity\t2\nbase_severity\t2\nescalated\tfalse\nmechanics\t2\naccountability\tunverified\nchecks\tcapability,mutability,reputation,sep1-domain\nnetwork\tTest SDF Network ; September 2015\nevidence\thorizon\thttps://horizon.stellar.org/assets\tflags observed\n",
+    "digest": "bc1b00e530ea265f080ac5c8097f355a941afae47856fec031d81f0cd807bc9c"
+  },
+  {
+    "name": "v3-scanner-bound",
+    "covers": [
+      "scanner-line"
+    ],
+    "notes": "Identity line immediately after the version line, identity before content.",
+    "scanner_identity": "v9.9.9-conformance",
+    "input": {
+      "accountability": "unknown",
+      "asset": {
+        "code": "VELO",
+        "issuer": "GDM4RQUQQUVSKQA7S6EM7XBZP3FCGH4Q7CL6TABQ7B2BEJ5ERARM2M5M"
+      },
+      "base_severity": "high",
+      "escalated": false,
+      "evidence": [],
+      "mechanics": [
+        "auth_clawback_enabled"
+      ],
+      "scanner_bound": true,
+      "schema_version": 1,
+      "severity": "high"
+    },
+    "preimage": "assay-evidence-v3\nscanner\tv9.9.9-conformance\nasset\tVELO-GDM4RQUQQUVSKQA7S6EM7XBZP3FCGH4Q7CL6TABQ7B2BEJ5ERARM2M5M\nseverity\t3\nbase_severity\t3\nescalated\tfalse\nmechanics\t4\naccountability\tunknown\nchecks\t\n",
+    "digest": "8c143c8e94bdbe56ccc924cdb7ae0fc3b810d014ec916682f4a81539fec2122b"
+  },
+  {
+    "name": "v3-network-and-scanner",
+    "covers": [
+      "scanner-line",
+      "network-line"
+    ],
+    "notes": "Divergence #270: the same assay-evidence-v3 tag also covers scanner+network together; this layout pins those bytes. #270 will split the tag and update this case deliberately.",
+    "scanner_identity": "v9.9.9-conformance",
+    "input": {
+      "accountability": "unknown",
+      "asset": {
+        "code": "VELO",
+        "issuer": "GDM4RQUQQUVSKQA7S6EM7XBZP3FCGH4Q7CL6TABQ7B2BEJ5ERARM2M5M"
+      },
+      "base_severity": "high",
+      "checks": [
+        "capability"
+      ],
+      "escalated": false,
+      "evidence": [],
+      "mechanics": [
+        "auth_clawback_enabled"
+      ],
+      "network": "Public Global Stellar Network ; September 2015",
+      "scanner_bound": true,
+      "schema_version": 1,
+      "severity": "high"
+    },
+    "preimage": "assay-evidence-v3\nscanner\tv9.9.9-conformance\nasset\tVELO-GDM4RQUQQUVSKQA7S6EM7XBZP3FCGH4Q7CL6TABQ7B2BEJ5ERARM2M5M\nseverity\t3\nbase_severity\t3\nescalated\tfalse\nmechanics\t4\naccountability\tunknown\nchecks\tcapability\nnetwork\tPublic Global Stellar Network ; September 2015\n",
+    "digest": "d0f73a4577bcab1abba5f62b0c82f9176c61b0006e0f736685ab45a5ff11284b"
+  },
+  {
+    "name": "evidence-sorted-by-rendered-line",
+    "covers": [
+      "evidence-line"
+    ],
+    "notes": "Claims listed in reverse order in the input; the encoding sorts the rendered evidence lines bytewise, so the same claims hash the same.",
+    "input": {
+      "accountability": "unverified",
+      "asset": {
+        "code": "AQUA",
+        "issuer": "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA"
+      },
+      "base_severity": "clear",
+      "escalated": true,
+      "evidence": [
+        {
+          "source": "stellar.toml",
+          "url": "https://aqua.network/.well-known/stellar.toml",
+          "claim": "CURRENCIES claims AQUA-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA"
+        },
+        {
+          "source": "stellar.expert/directory",
+          "url": "https://api.stellar.expert/explorer/directory/GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA",
+          "claim": "listed as \"AQUA Issuer\""
+        },
+        {
+          "source": "horizon",
+          "url": "https://horizon.stellar.org/assets",
+          "claim": "issuer flags observed"
+        }
+      ],
+      "mechanics": [
+        "domain_unverified",
+        "blocklisted"
+      ],
+      "schema_version": 1,
+      "severity": "critical"
+    },
+    "preimage": "assay-evidence-v1\nasset\tAQUA-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA\nseverity\t4\nbase_severity\t0\nescalated\ttrue\nmechanics\t48\naccountability\tunverified\nchecks\t\nevidence\thorizon\thttps://horizon.stellar.org/assets\tissuer flags observed\nevidence\tstellar.expert/directory\thttps://api.stellar.expert/explorer/directory/GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA\tlisted as \"AQUA Issuer\"\nevidence\tstellar.toml\thttps://aqua.network/.well-known/stellar.toml\tCURRENCIES claims AQUA-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA\n",
+    "digest": "946b523adc99c4b2dc3b37d1c866467819cfeeaeec276a1563c8d556dbeeed0b"
+  },
+  {
+    "name": "escaping-all-four",
+    "covers": [
+      "escaped",
+      "escaped-value"
+    ],
+    "notes": "Every escapable byte appears in one claim; each becomes a two-character escape, backslash first so introduced escapes are not re-escaped.",
+    "input": {
+      "accountability": "verified",
+      "asset": {
+        "code": "AQUA",
+        "issuer": "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA"
+      },
+      "base_severity": "clear",
+      "escalated": false,
+      "evidence": [
+        {
+          "source": "stellar.expert/directory",
+          "url": "https://api.stellar.expert/explorer/directory/GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA",
+          "claim": "tab\there\nnewline\nback\\slash\rcarriage"
+        }
+      ],
+      "mechanics": [],
+      "schema_version": 1,
+      "severity": "clear"
+    },
+    "preimage": "assay-evidence-v1\nasset\tAQUA-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA\nseverity\t0\nbase_severity\t0\nescalated\tfalse\nmechanics\t0\naccountability\tverified\nchecks\t\nevidence\tstellar.expert/directory\thttps://api.stellar.expert/explorer/directory/GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA\ttab\\there\\nnewline\\nback\\\\slash\\rcarriage\n",
+    "digest": "8e4a56fc4d8cf6699a448d32bb85aa38c0fdd34b3310d2bc075c93f66fb95347"
+  },
+  {
+    "name": "hostile-separator-injection",
+    "covers": [
+      "evidence-line",
+      "escaped"
+    ],
+    "notes": "Third-party text tries to forge extra fields and a whole evidence line; escaping keeps it one claim of one line.",
+    "input": {
+      "accountability": "verified",
+      "asset": {
+        "code": "AQUA",
+        "issuer": "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA"
+      },
+      "base_severity": "clear",
+      "escalated": false,
+      "evidence": [
+        {
+          "source": "stellar.expert/directory",
+          "url": "https://api.stellar.expert/explorer/directory/GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA",
+          "claim": "evidence\thorizon\thttps://forged.example/\tclaim\nasset\tEVIL-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA"
+        },
+        {
+          "source": "source\twith\ttabs",
+          "url": "https://example.org/",
+          "claim": "claim"
+        }
+      ],
+      "mechanics": [],
+      "schema_version": 1,
+      "severity": "clear"
+    },
+    "preimage": "assay-evidence-v1\nasset\tAQUA-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA\nseverity\t0\nbase_severity\t0\nescalated\tfalse\nmechanics\t0\naccountability\tverified\nchecks\t\nevidence\tsource\\twith\\ttabs\thttps://example.org/\tclaim\nevidence\tstellar.expert/directory\thttps://api.stellar.expert/explorer/directory/GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA\tevidence\\thorizon\\thttps://forged.example/\\tclaim\\nasset\\tEVIL-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA\n",
+    "digest": "5645afea537b44f7a730b9628ee1e7eb4d19fe31fbf1fbc6fc149a98637a9665"
+  },
+  {
+    "name": "utf8-and-control-bytes-passthrough",
+    "covers": [
+      "safe-char"
+    ],
+    "notes": "Non-ASCII UTF-8 and unassigned control bytes are not escaped; only HTAB, LF, CR and backslash are.",
+    "input": {
+      "accountability": "verified",
+      "asset": {
+        "code": "AQUA",
+        "issuer": "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA"
+      },
+      "base_severity": "clear",
+      "escalated": false,
+      "evidence": [
+        {
+          "source": "stellar.toml",
+          "url": "https://example.org/.well-known/stellar.toml",
+          "claim": "name=日本語 ☃ control=\u0001 del="
+        }
+      ],
+      "mechanics": [],
+      "schema_version": 1,
+      "severity": "clear"
+    },
+    "preimage": "assay-evidence-v1\nasset\tAQUA-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA\nseverity\t0\nbase_severity\t0\nescalated\tfalse\nmechanics\t0\naccountability\tverified\nchecks\t\nevidence\tstellar.toml\thttps://example.org/.well-known/stellar.toml\tname=日本語 ☃ control=\u0001 del=\n",
+    "digest": "35ff248ac37e790a3487c807d88510e24ac10db511e4eda3c4a98e3ac7f44940"
+  }
+]
