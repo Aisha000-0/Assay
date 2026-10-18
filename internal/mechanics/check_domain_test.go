@@ -228,3 +228,129 @@ status = "dead"
 		t.Errorf("want exactly one evidence entry, got %d: %+v", len(f.Evidence), f.Evidence)
 	}
 }
+
+// TestDomainCheckSurfacesOrganisationAttribution is the attribution change: a
+// stellar.toml may declare who publishes it — ORG_NAME and ORG_URL — and a
+// human reading the report wants to know who claims to be behind the asset.
+// The claim is the toml's, not Assay's, so it is emitted as attributed evidence
+// carrying the source and the URL the fields were read from — and moves
+// nothing else: severity stays Clear (attribution is never capability, and
+// buying a domain must not buy a severity) and accountability stays Verified,
+// which the reciprocity test above already settled whatever the document calls
+// itself.
+func TestDomainCheckSurfacesOrganisationAttribution(t *testing.T) {
+	f := runDomain(t, domainSubject(t, `
+[DOCUMENTATION]
+ORG_NAME = "Evil Corp"
+ORG_URL = "https://evil.example/"
+
+[[CURRENCIES]]
+code = "USDC"
+issuer = "`+domainIssuer+`"
+`))
+
+	if f.Severity != mechanics.Clear {
+		t.Errorf("severity = %v, want Clear: attribution must never move severity", f.Severity)
+	}
+	if f.Accountability == nil || *f.Accountability != mechanics.AccountabilityVerified {
+		t.Errorf("accountability = %v, want verified: reciprocity settled it, not the org fields", f.Accountability)
+	}
+	if f.Mechanics&mechanics.MechDomainUnverified != 0 {
+		t.Error("an attributed claim is still a verified claim; the unverified bit must stay unset")
+	}
+
+	if len(f.Evidence) != 2 {
+		t.Fatalf("want claim evidence plus organisation evidence, got %d: %+v", len(f.Evidence), f.Evidence)
+	}
+	org := f.Evidence[1]
+	if org.Source != "stellar.toml" {
+		t.Errorf("organisation evidence source = %q, want stellar.toml", org.Source)
+	}
+	if org.URL != "https://circle.com/.well-known/stellar.toml" {
+		t.Errorf("organisation evidence URL = %q, want the document's final location", org.URL)
+	}
+	// Both fields, quoted verbatim — the reader must be able to copy the claim
+	// into a search box, and an unquoted value could visually absorb the next
+	// field into itself.
+	if !strings.Contains(org.Claim, `ORG_NAME "Evil Corp"`) {
+		t.Errorf("organisation claim does not carry ORG_NAME verbatim: %q", org.Claim)
+	}
+	if !strings.Contains(org.Claim, `ORG_URL "https://evil.example/"`) {
+		t.Errorf("organisation claim does not carry ORG_URL verbatim: %q", org.Claim)
+	}
+	if org.RetrievedAt.IsZero() {
+		t.Error("organisation evidence must carry the document's retrieval time")
+	}
+	if org.Attempted || org.Refused {
+		t.Error("a declared organisation is a retrieval, not an attempt or a refusal")
+	}
+}
+
+// TestDomainCheckEmitsNoOrganisationEvidenceWhenAbsent pins the other half of
+// the change: a document that declares no organisation emits no organisation
+// claim, so the evidence bytes — and therefore evidence_hash — are unchanged
+// for every asset whose toml publishes neither field. Also pins that a lone
+// field still emits exactly one claim rather than one padded claim with an
+// empty other half.
+func TestDomainCheckEmitsNoOrganisationEvidenceWhenAbsent(t *testing.T) {
+	plain := runDomain(t, domainSubject(t, `
+[[CURRENCIES]]
+code = "USDC"
+issuer = "`+domainIssuer+`"
+`))
+	if len(plain.Evidence) != 1 {
+		t.Fatalf("want exactly one evidence entry, got %d: %+v", len(plain.Evidence), plain.Evidence)
+	}
+	if strings.Contains(plain.Evidence[0].Claim, "ORG_") {
+		t.Errorf("a document declaring no organisation emitted an organisation claim: %q", plain.Evidence[0].Claim)
+	}
+
+	onlyURL := runDomain(t, domainSubject(t, `
+[DOCUMENTATION]
+ORG_URL = "https://evil.example/"
+
+[[CURRENCIES]]
+code = "USDC"
+issuer = "`+domainIssuer+`"
+`))
+	if len(onlyURL.Evidence) != 2 {
+		t.Fatalf("want claim evidence plus organisation evidence, got %d: %+v", len(onlyURL.Evidence), onlyURL.Evidence)
+	}
+	claim := onlyURL.Evidence[1].Claim
+	if !strings.Contains(claim, `ORG_URL "https://evil.example/"`) {
+		t.Errorf("claim does not carry ORG_URL: %q", claim)
+	}
+	// The unpublished half must be absent, not rendered as an empty field: an
+	// `ORG_NAME ""` would be a claim the document never made.
+	if strings.Contains(claim, "ORG_NAME") {
+		t.Errorf("claim carries an ORG_NAME the document never published: %q", claim)
+	}
+}
+
+// TestDomainCheckWithholdsOrganisationEvidenceWithoutAClaim: the organisation
+// fields are attributed alongside a document that claims THIS asset. A toml
+// that never claimed the asset publishes no claim to attribute — attaching its
+// org fields to the report would read as “who is behind this asset” for an
+// association the very same finding says was never reciprocated. The fields are
+// parsed either way (see sep1.Doc); they surface only where the claim does.
+func TestDomainCheckWithholdsOrganisationEvidenceWithoutAClaim(t *testing.T) {
+	f := runDomain(t, domainSubject(t, `
+[DOCUMENTATION]
+ORG_NAME = "Nobody Ltd"
+ORG_URL = "https://nobody.example/"
+
+[[CURRENCIES]]
+code = "EURC"
+issuer = "`+otherIssuer+`"
+`))
+
+	if f.Accountability == nil || *f.Accountability != mechanics.AccountabilityUnverified {
+		t.Fatalf("accountability = %v, want unverified", f.Accountability)
+	}
+	if len(f.Evidence) != 1 {
+		t.Fatalf("want exactly one evidence entry, got %d: %+v", len(f.Evidence), f.Evidence)
+	}
+	if strings.Contains(f.Evidence[0].Claim, "ORG_") {
+		t.Errorf("organisation of a non-claiming document was attributed to the asset: %q", f.Evidence[0].Claim)
+	}
+}

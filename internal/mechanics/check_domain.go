@@ -3,6 +3,7 @@ package mechanics
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/use-assay/assay/internal/sep1"
 )
@@ -228,7 +229,56 @@ func (c DomainCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 			RetrievedAt: NewCanonicalTime(s.Toml.FetchedAt),
 		})
 	}
+	// The document also declares who publishes it (ORG_NAME / ORG_URL), which
+	// is what a human reading the report wants first: who claims to be behind
+	// this asset. Relayed as attributed evidence and nothing else — see
+	// appendOrganisationEvidence for why it moves no other field.
+	appendOrganisationEvidence(&f, s.Toml)
 	return f, nil
+}
+
+// appendOrganisationEvidence adds the toml's own publisher fields — ORG_NAME
+// and ORG_URL — to the finding as one attributed evidence claim, when the
+// document publishes at least one of them.
+//
+// A reader of a report wants to know who claims to be behind an asset, and the
+// claim is the toml's, not Assay's: the fields are relayed with the source and
+// the URL they were read from, quoted with %q exactly like every other
+// issuer-controlled string in this report (home_domain, a directory name), so
+// the encoder escapes them into their own field like every other claim before
+// they reach the hashed preimage.
+//
+// It moves nothing else. Severity stays capability-only — an issuer buying
+// attribution gains nothing there — and accountability was already settled by
+// the reciprocity test, not by who the document says it is: a toml may name
+// anyone it likes, so this is never a verification of identity, only a relay
+// of the claim. A document that declares neither field contributes no evidence
+// at all, so the evidence bytes — and therefore evidence_hash — are unchanged
+// for every asset attested without one.
+//
+// doc is the document the fields were read from, and its URL is what the claim
+// is attributed to: for a linked claim that is still the document home_domain
+// itself, not the per-currency file the asset claim came from.
+func appendOrganisationEvidence(f *Finding, doc *sep1.Doc) {
+	if doc == nil {
+		return
+	}
+	claims := make([]string, 0, 2)
+	if doc.Documentation.OrgName != "" {
+		claims = append(claims, fmt.Sprintf("ORG_NAME %q", doc.Documentation.OrgName))
+	}
+	if doc.Documentation.OrgURL != "" {
+		claims = append(claims, fmt.Sprintf("ORG_URL %q", doc.Documentation.OrgURL))
+	}
+	if len(claims) == 0 {
+		return
+	}
+	f.Evidence = append(f.Evidence, Evidence{
+		Source:      "stellar.toml",
+		URL:         doc.URL,
+		Claim:       strings.Join(claims, " "),
+		RetrievedAt: NewCanonicalTime(doc.FetchedAt),
+	})
 }
 
 // resolveLinked renders the domain finding for an issuer whose asset was not
@@ -266,6 +316,11 @@ func (DomainCheck) resolveLinked(f Finding, s *Subject, domain string, res *sep1
 			Claim:       "linked document claims " + s.Asset.String(),
 			RetrievedAt: NewCanonicalTime(retrieved),
 		})
+		// A verified claim is a verified claim however it arrived, so the
+		// publisher declared by the document home_domain points at is surfaced
+		// here exactly as it is for an inline claim — attributed to the document
+		// that declared it, not to the linked file the claim came from.
+		appendOrganisationEvidence(&f, s.Toml)
 		return f
 	}
 

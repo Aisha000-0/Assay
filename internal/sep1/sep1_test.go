@@ -95,6 +95,51 @@ issuer = "` + other + `"
 	}
 }
 
+// TestOrganisationFields covers the document-level publisher fields the domain
+// check relays as attributed evidence. They are document-level, not per-entry:
+// ORG_NAME and ORG_URL say who publishes the stellar.toml, which is what a
+// report reader wants to know about the party claiming the asset. Both are read
+// exactly as published — an issuer may put any text here, including a URL that
+// is not a URL — and an absent field is the empty string rather than a default,
+// because empty is what keeps a document that declares no organisation from
+// emitting evidence at all.
+func TestOrganisationFields(t *testing.T) {
+	doc, err := sep1.Parse([]byte(`
+[DOCUMENTATION]
+ORG_NAME = "Aquarius"
+ORG_URL = "https://aqua.network/"
+
+[[CURRENCIES]]
+code = "USDC"
+issuer = "` + issuer + `"
+`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	if doc.Documentation.OrgName != "Aquarius" {
+		t.Errorf("OrgName = %q, want %q", doc.Documentation.OrgName, "Aquarius")
+	}
+	if doc.Documentation.OrgURL != "https://aqua.network/" {
+		t.Errorf("OrgURL = %q, want %q", doc.Documentation.OrgURL, "https://aqua.network/")
+	}
+
+	// A document that declares neither field parses to empty strings, not to a
+	// partially filled claim: the evidence built from these fields must be
+	// absent rather than `ORG_NAME ""` for every issuer that never published one.
+	plain, err := sep1.Parse([]byte(`
+[[CURRENCIES]]
+code = "USDC"
+issuer = "` + issuer + `"
+`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if plain.Documentation.OrgName != "" || plain.Documentation.OrgURL != "" {
+		t.Errorf("undeclared organisation fields = (%q, %q), want both empty", plain.Documentation.OrgName, plain.Documentation.OrgURL)
+	}
+}
+
 // SEP-0001 permits a currency entry that links to a separate per-currency
 // TOML. Counting those entries is what lets the domain check say
 // "unconfirmed" instead of wrongly saying "refuted", because a link Assay did
