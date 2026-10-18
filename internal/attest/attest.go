@@ -14,12 +14,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/use-assay/assay/internal/mechanics"
+	"github.com/use-assay/assay/internal/version"
 )
 
 // PreimageVersion is the first line of every canonical preimage. It is part of
@@ -59,32 +59,24 @@ const PreimageVersionNetwork = "assay-evidence-v3"
 // to be made. A build-stamped commit hash was rejected: it makes every local
 // dev build produce a different hash for the same evidence, which would make
 // the hash useless for exactly the cross-machine and cross-version comparison
-// the field exists for. The module version (Go's `runtime/debug.BuildInfo`,
-// the same string `go install github.com/use-assay/assay@v1.2.3` records) was
-// chosen instead: it is stable across machines for a given release, changes
+// the field exists for. The module version — the same string
+// `go install github.com/use-assay/assay/cmd/assay@v1.2.3` records in Go's
+// `runtime/debug.BuildInfo` — was chosen instead: it is stable across
+// machines for a given release, changes
 // exactly when the code changes, and is verifiable by anyone who can run the
 // module. Development builds (no version stamped by the build system) report
 // as "devel", the same sentinel `go version -m` prints, so a hash produced by
 // an unstamped build is distinguishable from any tagged release rather than
 // silently pretending to be one.
 //
-// The variable is a var rather than computed at call time so tests can pin a
-// known identity and so a future build-stamping scheme can override it
-// deliberately — with a PreimageVersion review, as any identity change is a
-// hash change.
-var ScannerIdentity = moduleVersion()
-
-// moduleVersion reads the main module's version from the build info embedded
-// by the Go toolchain. "devel" for unstamped builds mirrors what
-// `go version -m` prints for a binary built from source without a version
-// flag.
-func moduleVersion() string {
-	info, ok := debug.ReadBuildInfo()
-	if !ok || info.Main.Version == "" || info.Main.Version == "(devel)" {
-		return "devel"
-	}
-	return info.Main.Version
-}
+// The value comes from internal/version, which computes it once from the
+// binary's module build info; initializing from that variable rather than
+// repeating the computation is what keeps the eval recorder's version and this
+// identity from ever disagreeing for a tagged build (issue #278). It is a var
+// rather than a constant so tests can pin a known identity and so a future
+// build-stamping scheme can override it deliberately — with a PreimageVersion
+// review, as any identity change is a hash change.
+var ScannerIdentity = version.Version
 
 // Params is one attest() call: the arguments, and nothing else.
 //
