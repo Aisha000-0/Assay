@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 # Cross-machine reproducibility check for Assay attestations.
 #
-# Recomputes the evidence_hash for every attested asset by scanning it live
-# and diffs the result against the table in docs/deployment.md.
+# Recomputes the evidence_hash for every attested asset by scanning it live,
+# renders each report under the preimage version docs/deployment.md records
+# for that attestation, and diffs the result against the recorded hash.
+# Comparing like with like is what tells "the evidence changed" apart from
+# "the encoding changed" (#275).
 #
 # Usage:
 #   scripts/reproducibility.sh [--bin PATH] [--deployment PATH]
 #                              [--attempts N] [--delay SECS]
 #
 #   --bin PATH         assay binary to run (default: $ASSAY_BIN or ./assay).
-#                      The binary must support `attestation -raw CODE-ISSUER`.
+#                      The binary must support
+#                      `attestation -raw -preimage-version vN CODE-ISSUER`.
 #   --deployment PATH  markdown file holding the attested-assets table
 #                      (default: docs/deployment.md relative to the repo root).
 #   --attempts N       scan attempts per asset before giving up (default 3).
@@ -25,14 +29,22 @@
 # editing code.
 #
 # Exit codes:
-#   0  every asset reproduced (PASS).
-#   1  at least one genuine mismatch (FAIL), or a script/usage error. Names
-#      each mismatched asset with its expected and actual hashes.
-#   2  no mismatches, but at least one scan could not complete (INCONCLUSIVE).
-#      An undetermined scan — or any scan error, e.g. an upstream outage — is
-#      never a pass and never a hard failure: there is nothing to compare, so
-#      the job reports inconclusive rather than claiming reproducibility or a
-#      reproducibility bug.
+#   0  every asset reproduced under the version it was recorded with (PASS).
+#   1  at least one genuine evidence mismatch (MISMATCH), or a script/usage
+#      error. Names each mismatched asset with its expected and actual hashes.
+#   2  no deterministic finding, but at least one scan could not complete
+#      (INCONCLUSIVE). An undetermined scan — or any scan error, e.g. an
+#      upstream outage — is never a pass and never a hard failure: there is
+#      nothing to compare, so the job reports inconclusive rather than
+#      claiming reproducibility or a reproducibility bug.
+#   3  no mismatch and no incomplete scan, but at least one asset's recorded
+#      hash reproduces under the encoding the current binary picks while it
+#      does not reproduce under the version the table records (ENCODING): the
+#      evidence is unchanged, and the Preimage column (or the encoder it
+#      names) is what disagrees.
+#
+# A run can produce several outcomes at once; the exit code is the most
+# severe: 1 (evidence drift) > 3 (encoding drift) > 2 (inconclusive) > 0.
 #
 # The expected hashes in docs/deployment.md are truncated to
 # `prefix…suffix` (8 + 6 hex chars) for readability. A fresh hash matches when
@@ -91,17 +103,20 @@ if [ ! -f "$DEPLOYMENT" ]; then
     exit 1
 fi
 
-# Parse docs/deployment.md for CODE-ISSUER + expected evidence_hash.
+# Parse docs/deployment.md for CODE-ISSUER + expected evidence_hash + the
+# preimage version the hash was made under.
 # The issuers table is the only one whose second column is a Stellar issuer
-# (G...) and whose fourth column is a hash fragment. A fifth `Preimage` column
-# names the encoding (v1/v2/v3); it is validated by scripts/check-deployment.sh
-# and does not change what is recomputed here, so it is tolerated, not used.
+# (G...) and whose fourth column is a hash fragment. The fifth `Preimage`
+# column names the encoding (v1/v2/v3) and is required: without it the script
+# could not compare like with like (#275). A missing or unknown version is a
+# table error, not a per-asset outcome.
 # Emit TSV:
-#   CODE-ISSUER<TAB>EXPECTED
-ASSETS_TSV="$(python3 - "$DEPLOYMENT" <<'PY'
+#   CODE-ISSUER<TAB>EXPECTED<TAB>VERSION
+if ! ASSETS_TSV="$(python3 - "$DEPLOYMENT" <<'PY'
 import re, sys
 path = sys.argv[1]
 issuer_re = re.compile(r'^G[A-Z2-7]{55}$')
+versions = ("v1", "v2", "v3")
 rows = []
 with open(path, encoding='utf-8') as f:
     for line in f:
@@ -120,11 +135,19 @@ with open(path, encoding='utf-8') as f:
         frag = hashfrag.replace('`', '')
         if not re.search(r'[0-9a-fA-F]{4}', frag):
             continue
-        rows.append(f"{code}-{issuer}\t{frag}")
+        version = cols[4] if len(cols) > 4 else ""
+        if version not in versions:
+            print(f"{path}: {code} records preimage version {version!r}; "
+                  f"expected one of {', '.join(versions)}", file=sys.stderr)
+            sys.exit(1)
+        rows.append(f"{code}-{issuer}\t{frag}\t{version}")
 for r in rows:
     print(r)
 PY
-)"
+)"; then
+    echo "reproducibility: failed to parse attested assets from $DEPLOYMENT" >&2
+    exit 1
+fi
 if [ -z "$ASSETS_TSV" ]; then
     echo "reproducibility: parsed 0 attested assets from $DEPLOYMENT; the table format may have changed" >&2
     exit 1
@@ -154,14 +177,17 @@ PY
 
 pass_count=0
 mismatch_count=0
+encoding_count=0
 inconclusive_count=0
 mismatches=""
+encodings=""
 inconclusives=""
 
-while IFS=$'\t' read -r asset expected; do
+while IFS=$'\t' read -r asset expected version; do
     [ -n "$asset" ] || continue
-    echo "--- $asset (expected $expected)" >&2
+    echo "--- $asset (expected $expected, recorded $version)" >&2
     actual=""
+    current=""
     scan_err=""
     ok=0
     attempt=1
@@ -170,17 +196,19 @@ while IFS=$'\t' read -r asset expected; do
         # The assay CLI times out internally after 30s; `timeout` is a
         # backstop so one hung asset cannot stall the whole job.
         if command -v timeout >/dev/null 2>&1; then
-            out="$(timeout 90 "$BIN" attestation -raw "$asset" 2>"$errfile")" && rc=0 || rc=$?
+            out="$(timeout 90 "$BIN" attestation -raw -preimage-version "$version" "$asset" 2>"$errfile")" && rc=0 || rc=$?
         else
-            out="$("$BIN" attestation -raw "$asset" 2>"$errfile")" && rc=0 || rc=$?
+            out="$("$BIN" attestation -raw -preimage-version "$version" "$asset" 2>"$errfile")" && rc=0 || rc=$?
         fi
         scan_err="$(head -c 500 "$errfile" | tr '\n' ' ')"
         rm -f "$errfile"
         if [ "$rc" -eq 0 ]; then
-            # -raw prints: SEVERITY<TAB>FLAGS<TAB>HASH
+            # -raw with -preimage-version prints four fields:
+            #   SEVERITY<TAB>FLAGS<TAB>HASH(version)<TAB>HASH(current)
             actual="$(printf '%s' "$out" | awk -F'\t' '{print $3}' | tr -d ' \r\n')"
+            current="$(printf '%s' "$out" | awk -F'\t' '{print $4}' | tr -d ' \r\n')"
             if [ -z "$actual" ]; then
-                scan_err="empty output from assay attestation -raw"
+                scan_err="empty output from assay attestation -raw -preimage-version $version"
                 echo "  attempt $attempt/$ATTEMPTS: empty output, retrying" >&2
             else
                 ok=1
@@ -205,6 +233,13 @@ while IFS=$'\t' read -r asset expected; do
     if hash_matches "$actual" "$expected"; then
         pass_count=$((pass_count + 1))
         echo "PASS $asset $actual"
+    elif [ -n "$current" ] && hash_matches "$current" "$expected"; then
+        # The recorded hash is not what the recorded version renders, but it
+        # is exactly what the current encoding renders: the evidence did not
+        # change, the encoding metadata did.
+        encoding_count=$((encoding_count + 1))
+        encodings="${encodings}${asset} recorded $version expected $expected; current encoding renders $current"$'\n'
+        echo "ENCODING $asset recorded $version does not render $expected, but the current encoding does: $current"
     else
         mismatch_count=$((mismatch_count + 1))
         mismatches="${mismatches}${asset} expected $expected actual $actual"$'\n'
@@ -213,14 +248,25 @@ while IFS=$'\t' read -r asset expected; do
 done <<< "$ASSETS_TSV"
 
 echo "" >&2
-echo "reproducibility: $pass_count pass, $mismatch_count mismatch, $inconclusive_count inconclusive (of $N_ASSETS)" >&2
+echo "reproducibility: $pass_count pass, $mismatch_count mismatch, $encoding_count encoding, $inconclusive_count inconclusive (of $N_ASSETS)" >&2
 
+# Exit-code precedence: evidence drift outranks encoding drift, and both are
+# deterministic findings that outrank an incomplete run.
 if [ "$mismatch_count" -gt 0 ]; then
     echo "" >&2
-    echo "MISMATCHES (genuine reproducibility failures — asset and both hashes):" >&2
+    echo "MISMATCHES (genuine evidence drift — asset and both hashes):" >&2
     printf '%s' "$mismatches" >&2
     echo "result: FAIL" >&2
     exit 1
+fi
+
+if [ "$encoding_count" -gt 0 ]; then
+    echo "" >&2
+    echo "ENCODINGS (recorded hash reproduces under the current encoding, not under the version the table records):" >&2
+    printf '%s' "$encodings" >&2
+    echo "The evidence is unchanged; the Preimage column (or the encoder it names) disagrees." >&2
+    echo "result: ENCODING" >&2
+    exit 3
 fi
 
 if [ "$inconclusive_count" -gt 0 ]; then

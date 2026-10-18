@@ -54,6 +54,7 @@ func exitCodeForError(err error) int {
 		strings.Contains(s, "expected asset") ||
 		strings.Contains(s, "bad request") ||
 		strings.Contains(s, "parse") ||
+		strings.Contains(s, "unknown preimage version") ||
 		strings.Contains(s, "flag provided but not defined") ||
 		strings.Contains(s, "invalid value") {
 		return exitUsage
@@ -139,6 +140,12 @@ The scan command additionally accepts:
   -replay DIR             serve every upstream response from a recording;
                           an unrecorded request fails loudly instead of
                           reaching the network
+
+The attestation command additionally accepts:
+  -preimage-version V     render the preimage under encoding V (v1, v2, v3
+                          or assay-evidence-vN) instead of the newest one the
+                          report binds, so an already-recorded hash can be
+                          reproduced from a fresh scan
 `)
 }
 
@@ -326,16 +333,32 @@ func (l *listFlag) Set(v string) error {
 // the attester key, and keeping derivation separate from submission means the
 // numbers going on-chain can be inspected — and the evidence hash independently
 // recomputed from -preimage — before a key ever touches them.
+//
+// -preimage-version renders the report under a historical encoding instead of
+// the newest one it binds: reproducing an attestation already on chain means
+// re-deriving the bytes it was actually hashed over. The flag takes v1, v2, v3
+// or the full assay-evidence-vN line; an empty value keeps the default
+// (newest binding wins). A verifier compares like with like because of it.
 func runAttestation(args []string, d commandDeps) error {
 	fs := flag.NewFlagSet("attestation", flag.ContinueOnError)
 	assetLists := assetListFlags(fs)
 	preimage := fs.Bool("preimage", false, "include the canonical bytes evidence_hash commits to")
 	raw := fs.Bool("raw", false, "print only the attest() arguments, tab-separated, for scripting")
+	preimageVersion := fs.String("preimage-version", "",
+		"render the preimage under this encoding: v1, v2, v3 or a full assay-evidence-vN line (default: the newest the report binds)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
 		return fmt.Errorf("attestation takes exactly one asset (CODE-ISSUER)")
+	}
+	// The encoding is validated before the live scan: a mistyped version is a
+	// usage error, and discovering it after a 30-second fetch would waste the
+	// fetch and muddy the error.
+	if *preimageVersion != "" {
+		if _, err := attest.NormalizePreimageVersion(*preimageVersion); err != nil {
+			return err
+		}
 	}
 	asset, err := scan.ParseAsset(fs.Arg(0))
 	if err != nil {
@@ -352,13 +375,28 @@ func runAttestation(args []string, d commandDeps) error {
 	// Derivation happens before any output. An undetermined scan has no
 	// attestation to print, and nothing may reach stdout that a pipeline could
 	// mistake for values.
-	params, err := attest.FromReport(report)
+	params, err := attest.FromReportAs(report, *preimageVersion)
 	if err != nil {
 		return err
 	}
 
 	if *raw {
-		_, err := fmt.Fprintf(d.stdout, "%d\t%d\t%s\n", params.Severity, params.Flags, params.EvidenceHash)
+		// Without a requested version the format is unchanged: SEVERITY,
+		// FLAGS, HASH. With one, a fourth field carries the hash the report
+		// renders under the version the current binary would pick, so a
+		// caller can tell "the evidence changed" (neither matches the
+		// recorded hash) apart from "the recorded hash belongs to another
+		// encoding" (only the current rendering matches it).
+		if *preimageVersion == "" {
+			_, err := fmt.Fprintf(d.stdout, "%d\t%d\t%s\n", params.Severity, params.Flags, params.EvidenceHash)
+			return err
+		}
+		current, err := attest.FromReport(report)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(d.stdout, "%d\t%d\t%s\t%s\n",
+			params.Severity, params.Flags, params.EvidenceHash, current.EvidenceHash)
 		return err
 	}
 	if !*preimage {

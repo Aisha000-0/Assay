@@ -10,7 +10,7 @@ NETWORK ?= testnet
 SOURCE ?= assay-attester
 CONTRACT_ID ?= CBK4FBIHMDTXCUPE4E3ZDVSFJSCY5FJETTKNIQPN4LFJIKKIBLKIXQ73
 
-.PHONY: all build build-release test test-notify cover lint fmt vet run clean \
+.PHONY: all build build-release test test-notify test-reproducibility cover lint fmt vet run clean \
 	offline-test \
 	contract-test contract-lint contract-build \
 	build-contract deploy-testnet attest read verify-gate verify-wasm \
@@ -50,6 +50,14 @@ test:
 # runs it alongside the merge-gate tests.
 test-notify:
 	bash ./scripts/test-notify-scheduled-failure.sh
+
+# test-reproducibility exercises scripts/reproducibility.sh against a stubbed
+# assay binary and fixture tables, covering the PASS/MISMATCH/ENCODING/
+# INCONCLUSIVE outcomes, their exit-code precedence, and the refusal of a
+# table without a valid Preimage column. It needs no network, so CI runs it
+# even though the script it tests does.
+test-reproducibility:
+	bash ./scripts/test-reproducibility.sh
 
 # cover prints the same per-package table CI puts in the job summary
 # (scripts/coverage-report.sh), lowest coverage first. It reports; it does not

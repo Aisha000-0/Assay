@@ -66,19 +66,16 @@ own.
 
 ## Known divergences the suite deliberately pins
 
-These are current-implementation bytes, annotated in the grammar and in the
-affected cases:
+This is a current-implementation divergence, annotated in the grammar and in
+the affected cases:
 
-1. **Empty `checks` line ([#269](https://github.com/use-assay/Assay/issues/269)).**
-   The encoder emits `checks<TAB>` (empty value) for every report; the spec
-   prose and the attestations on chain have no `checks` line at all for
-   pre-check-set reports. When #269 lands, its PR must update the affected
-   cases here — that is the suite doing its job, not the suite being wrong.
-2. **Ambiguous `v3` tag
+1. **Ambiguous `v3` tag
    ([#270](https://github.com/use-assay/Assay/issues/270)).**
    One tag covers scanner-only, network-only, and both. Both layouts appear
    as cases, each pinned to its bytes; #270's disambiguation will split the
-   grammar rule and update these cases deliberately.
+   grammar rule and update these cases deliberately. The empty-`checks`-line
+   divergence ([#269](https://github.com/use-assay/Assay/issues/269)) is
+   fixed: v1 bytes have no `checks` line, and the cases pin that.
 
 ## Adding a case
 

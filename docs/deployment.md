@@ -197,8 +197,13 @@ binding (`v2`) landed on 2026-09-26 and network/scanner binding (`v3`) on
 `v3`. A verifier recomputing any of these hashes must render the `v1`
 bytes described in [contract-interface.md](contract-interface.md); the
 `aqua-mainnet-onchain` vector under `internal/attest/testdata/vectors/` pins
-that encoding byte-for-byte to AQUA's on-chain hash. A future re-attestation
-under the current encoding would be `v3`, and this column is what says so.
+that encoding byte-for-byte to AQUA's on-chain hash. `assay attestation
+-preimage-version v1` does that rendering from a fresh scan, and
+`scripts/reproducibility.sh` reads this column and compares each asset under
+the version recorded here, so an encoding change and an evidence change are
+reported as different outcomes (`ENCODING` vs `MISMATCH`). A future
+re-attestation under the current encoding would be `v3`, and this column is
+what says so.
 
 Issuers, SAC addresses, and the evidence hash each attestation commits to:
 

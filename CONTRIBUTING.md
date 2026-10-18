@@ -75,6 +75,30 @@ make attest ASSET=CODE-ISSUER   # scan live and write the result on-chain
 make read   ASSET=CODE-ISSUER   # read it back with get_safety
 ```
 
+### Go toolchain
+
+The module's Go floor lives in `go.mod` (`go 1.26.9`) and nowhere else: every
+CI job reads it with `go-version-file: go.mod`, so raising the floor raises
+every job at once. `setup-go` also exports `GOTOOLCHAIN=local`, so a job
+running below the floor fails rather than quietly downloading a newer Go.
+
+The floor is **1.26.9** because Go 1.25 is end-of-life and `govulncheck`
+reports reachable standard-library vulnerabilities in its `net/http` —
+GO-2026-6617 and GO-2026-6613 among them — both on the paths Assay uses to
+fetch attacker-controlled `stellar.toml` documents. The floor was raised from
+`1.22` to `1.25.13` on 2026-10-06 and from `1.25.13` to `1.26.9` on
+2026-10-16, each time as a deliberate commit recorded here. Raise it the same
+way, and verify before and after:
+
+```sh
+go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+```
+
+The `attest-reproducibility` job additionally runs the `internal/attest`
+golden tests on the pin (`1.26.x`) and one newer release (`1.27.x`), because
+the preimage must be byte-identical across toolchains; a version below the
+floor could not build the module and is deliberately not in the matrix.
+
 ### Contract toolchain
 
 Reproducing a wasm hash recorded in [docs/deployment.md](docs/deployment.md)
@@ -188,8 +212,11 @@ to do when a source errors at capture time.
 ### The reproducibility job
 
 `.github/workflows/reproducibility.yml` recomputes the `evidence_hash` for
-the ten attested assets by scanning them live and diffs each fresh hash
-against the table in `docs/deployment.md`. The logic lives in
+the ten attested assets by scanning them live, renders each report under the
+preimage version the table records for it (`assay attestation -raw
+-preimage-version vN CODE-ISSUER`), and diffs the result against the table in
+`docs/deployment.md`. Comparing like with like is what keeps an encoding
+change from reading as an evidence change (#275). The logic lives in
 `scripts/reproducibility.sh` so it can be run locally exactly as CI runs it.
 It is the regression test for [#24](https://github.com/use-assay/Assay/issues/24):
 three of the ten on-chain hashes embed host-specific transport error text,
@@ -212,18 +239,31 @@ check; this job is the scheduled detector.
 
 Semantics, matching the script's exit codes:
 
-- **valid (exit 0)** — every fresh hash matches: pass.
-- **invalid (exit 1)** — a genuine mismatch fails and names the asset with
-  both hashes (`MISMATCH ASSET expected … actual …`).
-- **unknown (exit 2)** — a scan that returns undetermined, or any scan error
-  such as an unreachable source, is reported as **inconclusive**, never as a
-  pass and never as a hard failure. An upstream outage is not a
+- **pass (exit 0)** — every recorded version re-renders to its recorded hash.
+- **mismatch (exit 1)** — genuine evidence drift: neither the recorded
+  version nor the encoding the current binary picks reproduces the recorded
+  hash. Names the asset with both hashes (`MISMATCH ASSET expected … actual …`).
+- **encoding (exit 3)** — the recorded hash reproduces under the current
+  encoding but *not* under the version the table records. The evidence is
+  unchanged; the `Preimage` column (or the encoder it names) disagrees. This
+  is deliberately a different outcome from mismatch: it needs a table or
+  encoder fix, not a re-scan.
+- **inconclusive (exit 2)** — a scan that returns undetermined, or any scan
+  error such as an unreachable source, is reported as **inconclusive**, never
+  as a pass and never as a hard failure. An upstream outage is not a
   reproducibility bug. GitHub has no neutral job conclusion, so the workflow
   records inconclusive as a warning with a green check; the step summary
   says `INCONCLUSIVE`, not `PASS`.
+- A run can produce several outcomes; the exit code is the most severe:
+  **1 (evidence drift) > 3 (encoding drift) > 2 (inconclusive) > 0**.
 - **stale — n/a.** The hash commits to what the sources claimed, not to when
   they were asked, so attestation age is irrelevant to this comparison.
   Freshness policy lives in [docs/freshness.md](docs/freshness.md).
+
+The comparison itself — including which version the script asks the binary
+for and every outcome above — is pinned offline by
+`make test-reproducibility`, which drives the script with a stubbed assay
+binary and fixture tables. No network needed.
 
 Run it locally before relying on a scheduled result:
 
