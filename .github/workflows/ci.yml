@@ -42,6 +42,12 @@ jobs:
       - name: test merge gate
         run: make test-gate
 
+      # The scheduled-failure notification path is shell that runs on GitHub
+      # runners, so its logic is exercised here against a stubbed gh rather
+      # than trusted to a weekly run to discover it is broken.
+      - name: test scheduled-failure notification
+        run: make test-notify
+
       # Tests must pass without network access: every check is a pure function
       # over fixtures captured under internal/*/testdata.
       #
@@ -120,6 +126,46 @@ jobs:
       # a 14-mutation run would add minutes of noisy, advisory-only cost to
       # every PR. This comment exists so the absence is a recorded decision
       # rather than an oversight.
+
+  # The scanner is the instrument every attestation comes from. CI already
+  # pins the toolchain it is built with, but nothing checked that two builds of
+  # the same commit produce the same bytes -- which is what lets anyone rebuild
+  # a released assay and compare the hash. This job builds `make build-release`
+  # twice from the same commit in two different directories and fails if the
+  # bytes differ. `-trimpath` removes absolute paths, `-buildvcs=false` removes
+  # the working tree's VCS state, `CGO_ENABLED=0` removes the host C toolchain,
+  # and the toolchain comes from go.mod via setup-go, so the only remaining
+  # input is the source. See CONTRIBUTING.md ("Reproducible scanner builds").
+  reproducible-build:
+    name: Reproducible build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: build twice in different directories
+        run: |
+          set -eu
+          for dir in build-a build-b; do
+            rm -rf "$dir"
+            mkdir -p "$dir"
+            # git archive rather than cp: the build must not depend on .git
+            # (buildvcs=false), and this proves the source alone is enough.
+            git archive HEAD | tar -x -C "$dir"
+            make -C "$dir" build-release
+          done
+
+          sha256sum build-a/assay build-b/assay
+
+          if ! cmp -s build-a/assay build-b/assay; then
+            echo "::error title=Reproducible build::Two builds of the same commit differ; make build-release is not reproducible."
+            exit 1
+          fi
+          echo "::notice title=Reproducible build::Both builds of $(git rev-parse HEAD) hash identically."
 
   lint:
     name: golangci-lint
