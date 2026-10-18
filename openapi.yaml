@@ -49,7 +49,10 @@ paths:
                     items:
                       type: object
         '400':
-          description: Invalid request parameters.
+          description: >-
+            Invalid request parameters, or an asset identifier naming the
+            network's native asset (native/XLM), which has no issuer and no
+            authorization flags and is therefore never scanned or attested.
         '404':
           description: Asset not found on the ledger.
         '502':

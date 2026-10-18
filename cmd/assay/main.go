@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -45,6 +46,18 @@ func main() {
 func exitCodeForError(err error) int {
 	if err == nil {
 		return exitSuccess
+	}
+	// The native asset ("native" or "XLM", any case) is an input Assay
+	// understands and deliberately refuses, not one it fails to parse: the
+	// ledger gives it no issuer account, so there are no authorization flags
+	// to read and nothing to scan or attest. It is grouped with the other
+	// arguments these commands refuse (exit 2) so a script can tell "this
+	// identifier will never scan" from a transient failure without parsing
+	// stderr. Matched with errors.Is rather than the message text below, so
+	// wrapping or rewording cannot silently move it to another code.
+	// Documented in docs/cli.md.
+	if errors.Is(err, scan.ErrNativeAsset) {
+		return exitUsage
 	}
 	s := err.Error()
 	if strings.Contains(s, "unknown command") ||

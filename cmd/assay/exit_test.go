@@ -2,7 +2,10 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"testing"
+
+	"github.com/use-assay/assay/internal/scan"
 )
 
 func TestExitCodesDefined(t *testing.T) {
@@ -37,6 +40,10 @@ func TestExitCodePathsComprehensive(t *testing.T) {
 		{"Usage unknown command", errors.New("unknown command foo"), exitUsage},
 		{"Usage takes exactly one asset", errors.New("scan takes exactly one asset (CODE-ISSUER)"), exitUsage},
 		{"Usage invalid asset", errors.New("invalid asset format"), exitUsage},
+		// The native asset is an understood refusal rather than a malformed
+		// input, but it is still an argument these commands refuse before any
+		// scan, so it carries the same exit code. docs/cli.md documents it.
+		{"Usage native asset", fmt.Errorf("%w: %q cannot be scanned or attested", scan.ErrNativeAsset, "XLM"), exitUsage},
 		{"Missing not found", errors.New("resource not found"), exitMissing},
 		{"Missing does not exist", errors.New("asset does not exist on ledger"), exitMissing},
 		{"Unavailable timeout", errors.New("connection timeout"), exitUnavailable},

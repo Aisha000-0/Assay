@@ -38,6 +38,18 @@ var codeRE = regexp.MustCompile(`^[A-Za-z0-9]{1,12}$`)
 // ErrBadAsset reports an unparseable asset identifier.
 var ErrBadAsset = errors.New("scan: invalid asset")
 
+// ErrNativeAsset reports an input that names the network's native asset
+// ("native" or "XLM").
+//
+// The native asset has no issuer account, so there are no authorization flags
+// to read and nothing for the engine to classify: it is not a scannable asset,
+// and it is never attested. It gets its own error rather than ErrBadAsset
+// because the input is understood, not malformed — the answer is a fact about
+// the ledger, so it says so instead of complaining about the input's shape.
+// It is returned before any fetch, so it can never produce a report.
+// Documented in docs/cli.md (exit code) and docs/api.md (HTTP status).
+var ErrNativeAsset = errors.New("native asset has no issuer and no authorization flags")
+
 // ErrBadHolder reports an invalid holder account ID.
 var ErrBadHolder = errors.New("scan: invalid holder account ID")
 
@@ -51,10 +63,18 @@ func ValidateHolder(id string) error {
 }
 
 // ParseAsset accepts the canonical CODE-ISSUER form and validates both halves.
+//
+// The one input with no CODE-ISSUER that is not an error of shape is the
+// native asset: "native" and "XLM" (any case) are recognised and refused with
+// ErrNativeAsset's explanation — no issuer, no authorization flags, nothing to
+// scan, nothing to attest. Every other separator-less input is ErrBadAsset.
 func ParseAsset(s string) (mechanics.Asset, error) {
 	s = strings.TrimSpace(s)
 	code, issuer, ok := strings.Cut(s, "-")
 	if !ok {
+		if isNativeName(s) {
+			return mechanics.Asset{}, fmt.Errorf("%w: %q cannot be scanned or attested", ErrNativeAsset, s)
+		}
 		return mechanics.Asset{}, fmt.Errorf("%w: expected CODE-ISSUER, got %q", ErrBadAsset, s)
 	}
 	// Trailing "-1"/"-2" suffixes appear in some explorer asset identifiers.
@@ -68,6 +88,20 @@ func ParseAsset(s string) (mechanics.Asset, error) {
 		return mechanics.Asset{}, fmt.Errorf("%w: bad issuer %q", ErrBadAsset, issuer)
 	}
 	return mechanics.Asset{Code: code, Issuer: issuer}, nil
+}
+
+// isNativeName reports whether s names the ledger's native asset in one of the
+// forms people actually type: "native" or the ticker "XLM", in any case.
+//
+// It is only consulted for inputs with no issuer half, so a credit asset whose
+// code merely happens to be XLM ("XLM-G…") still parses as an ordinary asset.
+func isNativeName(s string) bool {
+	switch strings.ToLower(s) {
+	case "native", "xlm":
+		return true
+	default:
+		return false
+	}
 }
 
 // Scanner fetches subject state and classifies it.

@@ -50,6 +50,43 @@ func TestScanRejectsBadInput(t *testing.T) {
 	}
 }
 
+// TestScanNativeAssetIsExplicit400 pins the documented answer for the
+// network's native asset: an understood input, refused with 400 and a message
+// naming the ledger fact — no issuer, no authorization flags — rather than a
+// parse error. docs/api.md documents both the status and the wording.
+func TestScanNativeAssetIsExplicit400(t *testing.T) {
+	h := newTestServer()
+
+	for _, query := range []string{
+		"/api/v1/scan?asset=native",
+		"/api/v1/scan?asset=XLM",
+		"/api/v1/scan?asset=xlm",
+	} {
+		t.Run(query, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, query, nil))
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", rec.Code)
+			}
+			var body struct {
+				Error string `json:"error"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			for _, want := range []string{
+				"native asset has no issuer and no authorization flags",
+				"cannot be scanned or attested",
+			} {
+				if !strings.Contains(body.Error, want) {
+					t.Errorf("error = %q, want it to say %q", body.Error, want)
+				}
+			}
+		})
+	}
+}
+
 func TestHealthz(t *testing.T) {
 	rec := httptest.NewRecorder()
 	newTestServer().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
