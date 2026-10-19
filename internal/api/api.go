@@ -55,6 +55,20 @@ func NewServer(log *slog.Logger) *Server {
 	return &Server{Scanner: scan.New(), History: history.New(), Metrics: NewMetrics(), Log: log}
 }
 
+// Routes lists every route Handler registers, in the "METHOD /path" form
+// http.ServeMux accepts. Handler builds its mux from this list, so a route
+// cannot be registered without appearing here; the OpenAPI coverage test uses
+// the same list to hold openapi.yaml to the surface the server actually serves.
+var Routes = []string{
+	"GET /api/v1/scan",
+	"GET /api/v1/history",
+	"GET /api/v1/exposure",
+	"GET /metrics",
+	"GET /healthz",
+	"GET /readyz",
+	"GET /",
+}
+
 // Handler returns the configured HTTP routes.
 //
 // Every route runs through the observability middleware, which assigns the
@@ -63,8 +77,6 @@ func NewServer(log *slog.Logger) *Server {
 // installed once, here, rather than remembered per handler.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v1/scan", s.handleScan)
-	mux.HandleFunc("GET /api/v1/history", s.handleHistory)
 	// Exposure is one request to many scans, so it is wrapped in the rate
 	// limit at registration — the bucket is built once per Handler, not per
 	// request, or every request would start with a full burst.
@@ -72,18 +84,33 @@ func (s *Server) Handler() http.Handler {
 	if limiter == nil {
 		limiter = NewRateLimiter(defaultExposureBurst, defaultExposureRate)
 	}
-	mux.HandleFunc("GET /api/v1/exposure", s.withExposureLimit(limiter, s.handleExposure))
-	mux.HandleFunc("GET /metrics", s.handleMetrics)
+
 	// Liveness and readiness are separate endpoints on purpose: /healthz says
 	// the process is up and checks nothing, /readyz asks the upstreams. A
 	// failing probe must never report healthy; a dying process must still be
 	// able to answer /healthz.
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-	mux.HandleFunc("GET /readyz", s.handleReadyz)
-	mux.HandleFunc("GET /", s.handleUI)
+	handlers := map[string]http.HandlerFunc{
+		"GET /api/v1/scan":     s.handleScan,
+		"GET /api/v1/history":  s.handleHistory,
+		"GET /api/v1/exposure": s.withExposureLimit(limiter, s.handleExposure),
+		"GET /metrics":         s.handleMetrics,
+		"GET /healthz": func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+		},
+		"GET /readyz": s.handleReadyz,
+		"GET /":       s.handleUI,
+	}
+
+	for _, route := range Routes {
+		handler, ok := handlers[route]
+		if !ok {
+			// Routes and handlers are two views of one table; a route without
+			// a handler is a programming error, caught before serving traffic.
+			panic("api: no handler for route " + route)
+		}
+		mux.HandleFunc(route, handler)
+	}
 	return s.withObservability(mux)
 }
 
