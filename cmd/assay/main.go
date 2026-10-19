@@ -155,8 +155,8 @@ The scan command additionally accepts:
                           reaching the network
 
 The attestation command additionally accepts:
-  -preimage-version V     render the preimage under encoding V (v1, v2, v3
-                          or assay-evidence-vN) instead of the newest one the
+  -preimage-version V     render the preimage under encoding V (v1, v2, v3,
+                          v4 or assay-evidence-vN) instead of the one the
                           report binds, so an already-recorded hash can be
                           reproduced from a fresh scan
 `)
@@ -349,7 +349,7 @@ func (l *listFlag) Set(v string) error {
 //
 // -preimage-version renders the report under a historical encoding instead of
 // the newest one it binds: reproducing an attestation already on chain means
-// re-deriving the bytes it was actually hashed over. The flag takes v1, v2, v3
+// re-deriving the bytes it was actually hashed over. The flag takes v1 … v4
 // or the full assay-evidence-vN line; an empty value keeps the default
 // (newest binding wins). A verifier compares like with like because of it.
 func runAttestation(args []string, d commandDeps) error {
@@ -358,7 +358,7 @@ func runAttestation(args []string, d commandDeps) error {
 	preimage := fs.Bool("preimage", false, "include the canonical bytes evidence_hash commits to")
 	raw := fs.Bool("raw", false, "print only the attest() arguments, tab-separated, for scripting")
 	preimageVersion := fs.String("preimage-version", "",
-		"render the preimage under this encoding: v1, v2, v3 or a full assay-evidence-vN line (default: the newest the report binds)")
+		"render the preimage under this encoding: v1, v2, v3, v4 or a full assay-evidence-vN line (default: the one the report binds)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
