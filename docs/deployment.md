@@ -191,19 +191,21 @@ eight further assets scanned but not attested, is in
 Every row is `v1` because all ten attestations predate the later encodings:
 the first tranche was written 2026-08-15, the second 2026-09-05, and the third
 plus the AQUA and DOGE re-attestations 2026-09-16 — all before check-set
-binding (`v2`) landed on 2026-09-26 and network/scanner binding (`v3`) on
+binding (`v2`) landed on 2026-09-26 and network binding (`v3`) on
 2026-09-27. The short names are the preimage's first line without the
-`assay-evidence-` prefix: `v1` is `assay-evidence-v1`, and so on for `v2` and
-`v3`. A verifier recomputing any of these hashes must render the `v1`
+`assay-evidence-` prefix: `v1` is `assay-evidence-v1`, and so on for `v2`, `v3`
+and `v4`. A verifier recomputing any of these hashes must render the `v1`
 bytes described in [contract-interface.md](contract-interface.md); the
-`aqua-mainnet-onchain` vector under `internal/attest/testdata/vectors/` pins
-that encoding byte-for-byte to AQUA's on-chain hash. `assay attestation
+`aqua-`, `usdc-` and `usdz-mainnet-onchain` vectors under
+`internal/attest/testdata/vectors/` pin that encoding byte-for-byte to those
+three on-chain hashes. `assay attestation
 -preimage-version v1` does that rendering from a fresh scan, and
 `scripts/reproducibility.sh` reads this column and compares each asset under
 the version recorded here, so an encoding change and an evidence change are
 reported as different outcomes (`ENCODING` vs `MISMATCH`). A future
-re-attestation under the current encoding would be `v3`, and this column is
-what says so.
+re-attestation under the current encoding would be `v4` (scanner, checks and
+network bound; every `scan.Scanner` report is v4), and this column is what says
+so.
 
 Issuers, SAC addresses, and the evidence hash each attestation commits to:
 
@@ -492,7 +494,7 @@ It checks the registry and gate addresses, the wasm hash of the registry and of
 all three gate instances, the registry each gate was constructed with, and the
 severity, flags and evidence hash of all ten attestations — 21 checks. The
 `Preimage` column is validated while the tables are parsed: every row must name
-`v1`, `v2` or `v3`, and the two tables must agree for a given asset. It is not
+`v1`, `v2`, `v3` or `v4`, and the two tables must agree for a given asset. It is not
 compared against the chain, because the chain stores only the hash; whether the
 named encoding reproduces that hash is what the
 [Reproducibility job](../CONTRIBUTING.md#the-reproducibility-job) tests by
