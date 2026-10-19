@@ -68,7 +68,7 @@ carries an explicit, evaluated position on legitimate clawback use. See
 | [docs/trust.md](docs/trust.md) | What you are trusting: verifiable facts vs. relayed claims, and consequence matrix |
 | [docs/deployment.md](docs/deployment.md) | Deployed addresses, attested assets, transaction hashes |
 | [docs/attester-key.md](docs/attester-key.md) | Attester key custody, loss/compromise response, rotation limits |
-| [docs/verifying.md](docs/verifying.md) | How a third party verifies an attestation end to end, without reading the source |
+| [docs/verifying.md](docs/verifying.md) | How a third party verifies a downloaded binary, then an attestation, end to end, without reading the source |
 | [docs/attestation-run.md](docs/attestation-run.md) | Every asset scanned, what each check returned, and what the run exposed about the scanner |
 | [docs/history.md](docs/history.md) | The observation history API: what is retained, for how long, and what an empty history means |
 | [docs/eval.md](docs/eval.md) | Labelled trap/legitimate set and current results |
@@ -88,7 +88,9 @@ for every attested asset, with the limits recorded in
 [#24](https://github.com/use-assay/Assay/issues/24).
 [docs/verifying.md](docs/verifying.md) is the procedure a third party follows to
 check one of those attestations from scratch, including what a mismatch does and
-does not prove.
+does not prove. It begins by verifying the scanner itself against its published
+checksum and build provenance, because a verifier comparing evidence hashes is
+otherwise trusting the binary they downloaded.
 
 Four things are worth knowing before you rely on any of it:
 
