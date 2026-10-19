@@ -354,9 +354,11 @@ refuses anything surprising rather than guessing:
 3. That stamp is also the scanner identity. `internal/version.Version` is read
    from the binary's build info and `attest.ScannerIdentity` is initialized
    from that variable, so for a tagged build the eval recorder's version, the
-   v3 preimage's `scanner` line, and `go version -m` are all the tag and
-   cannot disagree. A development build reports `devel` everywhere; that is
-   the honest answer, not a bug.
+   v4 preimage's `scanner` line, and `go version -m` are all the tag and
+   cannot disagree. A development build reports `devel` everywhere, including
+   a `go build` from a git checkout, which Go stamps with a pseudo-version
+   (`internal/version` reports pseudo-versions and `+dirty` builds as
+   `devel`). That is the honest answer, not a bug.
 
 If a release must be withdrawn, delete the release and the tag deliberately
 (`gh release delete`, `git push --delete`) rather than re-pointing the tag:

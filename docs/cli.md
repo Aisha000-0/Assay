@@ -60,8 +60,10 @@ numbers going on-chain can be inspected before a key ever touches them.
 ```
 
 `-preimage-version vN` renders the report under a historical encoding instead
-of the newest one it binds, and accepts `v1`, `v2`, `v3` or the full
-`assay-evidence-vN` line:
+of the one it binds, and accepts `v1`, `v2`, `v3`, `v4` or the full
+`assay-evidence-vN` line. It can withhold bindings the scan carries (a live
+scan is `v4`), but never add one: asking for a version that binds something
+the report lacks is refused.
 
 ```
 ./assay attestation -preimage -preimage-version v1 CODE-ISSUER
