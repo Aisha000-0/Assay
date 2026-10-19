@@ -732,9 +732,9 @@ hashed field is a false attestation waiting to be written.
 The prose above states the intent; this grammar is the contract. It is
 written per [RFC 5234](https://www.rfc-editor.org/rfc/rfc5234) over bytes
 (LF-terminated UTF-8 lines, HTAB-separated fields), and it describes exactly
-what `attest.Preimage` emits today — including two divergences from the prose
-above, which are named inline and tracked as open issues rather than papered
-over. The machine-readable suite in [`conformance/`](../conformance) pins one
+what `attest.Preimage` emits today — including one divergence from the prose
+above, named inline and tracked as an open issue rather than papered over.
+The machine-readable suite in [`conformance/`](../conformance) pins one
 or more cases per rule; `internal/attest/conformance_test.go` runs it in CI
 and fails if any grammar rule is uncovered. Any other implementation can run
 the same cases from the JSON alone, without reading the Go code.
@@ -760,7 +760,7 @@ field-lines     = asset-line
                   escalated-line
                   mechanics-line
                   accountability-line
-                  checks-line
+                  [checks-line]
                   [network-line]
 
 asset-line      = "asset" HTAB escaped-value LF
@@ -771,13 +771,12 @@ mechanics-line  = "mechanics" HTAB 1*DIGIT LF
 accountability-line = "accountability" HTAB accountability LF
 accountability  = "unknown" / "unverified" / "verified"
 
-; The checks line is emitted for EVERY report, and its value is empty when
-; no check set is bound. DIVERGENCE (#269): the prose above says a report
-; from before check-set binding carries no checks line at all, and the
-; attestation on chain was hashed that way; the current encoder emits the
-; empty line instead. The grammar and the conformance suite describe the
-; bytes the code emits today, so that #269's fix becomes a deliberate,
-; reviewable suite update rather than a silent drift.
+; The checks line is emitted only under v2 and v3, and only when the report
+; binds a check set. A report with no bound set omits the line entirely —
+; absent, not empty. That is the exact v1 byte shape every pre-check-set
+; attestation on chain was hashed over (#269): an empty checks line is
+; different bytes and a different hash, so it must never be emitted for v1,
+; and a historical v1 rendering omits it even when the report carries a set.
 checks-line     = "checks" HTAB [check-list] LF
 check-list      = check-id *("," check-id)
 check-id        = 1*(ALPHA / DIGIT / "-" / "_")
@@ -809,6 +808,15 @@ grammar states this honestly as an optional `scanner-line` and an optional
 `network-line` under a single tag. #270 exists to make the tag injective;
 when it lands, this grammar splits into one rule per layout and the suite
 follows, because every case is pinned to concrete bytes.)
+
+Version selection describes the bytes a *fresh* report is written under. To
+reproduce an attestation already on chain, render the version that record
+names instead: `attest.PreimageAs` (and `assay attestation -preimage-version
+vN`) apply the rules above to the requested version rather than to the newest
+binding the report carries, so a v1 rendering of a report that holds bindings
+still omits the checks, scanner and network lines v1 never had. Comparing a
+fresh scan's default rendering against a v1 record would compare unlike
+bytes; this is the rendering path that makes the comparison meaningful.
 
 Two more rules are load-bearing even though no production rule can express
 them: severity and mechanics render as decimal integers of their bit values,

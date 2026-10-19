@@ -158,6 +158,74 @@ func TestAttestationRawGolden(t *testing.T) {
 	}
 }
 
+// TestAttestationPreimageVersionRaw pins the four-field raw form. The fourth
+// field is the hash under the version the current binary picks; a v1 request
+// against testReport (which binds a check set, so the default is v2) must
+// differ from it, and both must equal the derives the encoder makes.
+func TestAttestationPreimageVersionRaw(t *testing.T) {
+	d, out, _, _ := deps(testReport(), nil)
+	args := []string{"attestation", "-raw", "-preimage-version", "v1", "USDC-" + cliIssuer}
+	if err := runWith(args, d); err != nil {
+		t.Fatalf("attestation -raw -preimage-version v1: %v", err)
+	}
+
+	underV1, err := attest.FromReportAs(testReport(), "v1")
+	if err != nil {
+		t.Fatalf("FromReportAs: %v", err)
+	}
+	current, err := attest.FromReport(testReport())
+	if err != nil {
+		t.Fatalf("FromReport: %v", err)
+	}
+	if underV1.EvidenceHash == current.EvidenceHash {
+		t.Fatal("test report encodes identically under v1 and the current version; the fixture no longer distinguishes them")
+	}
+	want := fmt.Sprintf("%d\t%d\t%s\t%s\n",
+		underV1.Severity, underV1.Flags, underV1.EvidenceHash, current.EvidenceHash)
+	if got := out.String(); got != want {
+		t.Fatalf("-raw output = %q, want %q", got, want)
+	}
+	if fields := strings.Split(strings.TrimRight(out.String(), "\n"), "\t"); len(fields) != 4 {
+		t.Fatalf("-raw -preimage-version has %d tab-separated fields, want 4: %q", len(fields), out.String())
+	}
+}
+
+// The JSON form with -preimage-version prints the historical bytes: the v1
+// rendering omits the checks line even though the report binds a set.
+func TestAttestationPreimageVersionJSON(t *testing.T) {
+	d, out, _, _ := deps(testReport(), nil)
+	args := []string{"attestation", "-preimage", "-preimage-version", "v1", "USDC-" + cliIssuer}
+	if err := runWith(args, d); err != nil {
+		t.Fatalf("attestation -preimage -preimage-version v1: %v", err)
+	}
+	var got attest.Params
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("attestation output is not JSON: %v", err)
+	}
+	if !strings.HasPrefix(got.Preimage, attest.PreimageVersion+"\n") {
+		t.Fatalf("preimage does not start with the v1 version line: %q", got.Preimage)
+	}
+	for _, line := range strings.Split(got.Preimage, "\n") {
+		if strings.HasPrefix(line, "checks\t") || strings.HasPrefix(line, "network\t") {
+			t.Fatalf("v1 rendering carries a later version's line: %q", got.Preimage)
+		}
+	}
+}
+
+// An encoding the package does not know is refused with nothing on stdout: a
+// caller must not mistake a fallback rendering for the bytes it asked for.
+func TestAttestationUnknownPreimageVersion(t *testing.T) {
+	d, out, _, _ := deps(testReport(), nil)
+	args := []string{"attestation", "-raw", "-preimage-version", "v9", "USDC-" + cliIssuer}
+	err := runWith(args, d)
+	if err == nil || !strings.Contains(err.Error(), "unknown preimage version") {
+		t.Fatalf("unknown version error = %v", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("unknown version wrote to stdout: %q", out.String())
+	}
+}
+
 // TestAttestationUndeterminedPrintsNothing is the honesty case: an undetermined
 // scan has nothing to attest, so the command fails and writes no values a shell
 // pipeline could mistake for a severity, flags or hash.

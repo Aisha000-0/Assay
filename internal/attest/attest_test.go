@@ -91,7 +91,8 @@ func TestPreimageMatchesTheDocumentedEncoding(t *testing.T) {
 		"escalated\tfalse",
 		"mechanics\t0",
 		"accountability\tverified",
-		"checks\t",
+		// No checks line: the report binds no check set, and v1 never had
+		// the line (#269).
 		// Evidence lines sorted bytewise: horizon before stellar.expert.
 		"evidence\thorizon\thttps://horizon.stellar.org/assets?asset_code=AQUA\t" + escaped,
 		"evidence\tstellar.expert/directory\thttps://api.stellar.expert/explorer/directory/" + rep.Asset.Issuer + "\t" + `listed as "AQUA Issuer" on aqua.network`,
@@ -286,10 +287,10 @@ func TestSeparatorsInClaimsCannotForgeALine(t *testing.T) {
 	if strings.Contains(crafted.Preimage, "\nevidence\thorizon\thttps://evil") {
 		t.Fatalf("a claim injected a forged evidence line:\n%s", crafted.Preimage)
 	}
-	// Version, seven header fields, one evidence line: the crafted claim must not
+	// Version, six header fields, one evidence line: the crafted claim must not
 	// have bought itself an extra record.
-	if lines := strings.Count(crafted.Preimage, "\n"); lines != 9 {
-		t.Fatalf("expected 9 preimage lines, got %d:\n%s", lines, crafted.Preimage)
+	if lines := strings.Count(crafted.Preimage, "\n"); lines != 8 {
+		t.Fatalf("expected 8 preimage lines, got %d:\n%s", lines, crafted.Preimage)
 	}
 }
 

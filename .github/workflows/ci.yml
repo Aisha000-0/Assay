@@ -48,6 +48,12 @@ jobs:
       - name: test scheduled-failure notification
         run: make test-notify
 
+      # The reproducibility script itself is only ever run against live
+      # sources, so its version-aware comparison and exit codes are pinned
+      # here against a stubbed assay binary before the weekly run uses them.
+      - name: test reproducibility script
+        run: make test-reproducibility
+
       # Tests must pass without network access: every check is a pure function
       # over fixtures captured under internal/*/testdata.
       #

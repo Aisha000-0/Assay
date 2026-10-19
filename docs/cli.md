@@ -59,6 +59,33 @@ numbers going on-chain can be inspected before a key ever touches them.
 ./assay attestation -raw CODE-ISSUER  # just `SEVERITY<TAB>FLAGS<TAB>HASH`
 ```
 
+`-preimage-version vN` renders the report under a historical encoding instead
+of the newest one it binds, and accepts `v1`, `v2`, `v3` or the full
+`assay-evidence-vN` line:
+
+```
+./assay attestation -preimage -preimage-version v1 CODE-ISSUER
+```
+
+This is how an attestation already on chain is reproduced: the recorded
+`evidence_hash` was hashed over the bytes of its recorded version, so a
+verifier must re-render those bytes rather than compare against whatever the
+current scanner emits. The version the report itself binds is unchanged; only
+the rendering is. An unknown version is refused before anything is printed.
+
+With `-raw` and no `-preimage-version`, the output is unchanged: three fields,
+`SEVERITY<TAB>FLAGS<TAB>HASH`. With `-preimage-version`, a fourth field is
+appended — the hash the report renders under the version the current binary
+would pick — so a caller can tell evidence drift from metadata drift:
+
+```
+SEVERITY<TAB>FLAGS<TAB>HASH(version)<TAB>HASH(current)
+```
+
+`scripts/reproducibility.sh` is the reference consumer: when the first hash
+does not match the recorded one but the second does, the evidence is unchanged
+and it reports `ENCODING` rather than a misleading `MISMATCH`.
+
 ## assay verify
 
 Checks a canonical preimage against an `evidence_hash`. It is the third-party

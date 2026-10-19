@@ -63,14 +63,17 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # Script exit codes: 0 pass, 1 mismatch/failure, 2 inconclusive.
-          # GitHub has no neutral conclusion for a job, so inconclusive is
-          # reported as a warning with a green check: it must never read as
-          # a pass (the summary says INCONCLUSIVE, not PASS) and never as a
-          # hard failure (an upstream outage is not a reproducibility bug).
+          # Script exit codes: 0 pass, 1 evidence mismatch, 2 inconclusive,
+          # 3 encoding drift. GitHub has no neutral conclusion for a job, so
+          # inconclusive is reported as a warning with a green check: it must
+          # never read as a pass (the summary says INCONCLUSIVE, not PASS) and
+          # never as a hard failure (an upstream outage is not a
+          # reproducibility bug). 1 and 3 are deterministic findings and fail
+          # the job; each needs a different fix, so the log names which.
           case "$rc" in
             0) echo "::notice title=Reproducibility::All attested evidence hashes reproduce." ;;
             2) echo "::warning title=Reproducibility::Inconclusive: at least one scan could not complete. Not a pass, not a failure; re-run when sources recover." ;;
+            3) echo "::error title=Reproducibility::Encoding drift (exit 3): a recorded hash reproduces under the current encoding, not under the version the table records. See the log."; exit 1 ;;
             *) echo "::error title=Reproducibility::Mismatch or script error (exit $rc). See the log for the asset and both hashes."; exit 1 ;;
           esac
 

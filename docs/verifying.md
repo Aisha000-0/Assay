@@ -106,9 +106,23 @@ written to catch.
 # the exact bytes hashed
 ```
 
-`-raw` prints the three components step 5 compares. `-preimage` prints the
-canonical bytes those three are SHA-256 over, so the check is independent of
-Assay: the encoding is specified line by line in
+An attestation written before the current encoding was hashed over *its own*
+version's bytes, so render the recorded version rather than whatever the
+current scanner emits. `docs/deployment.md` records that version per asset; a
+recorded `v1` is reproduced with:
+
+```sh
+./assay attestation -raw -preimage-version v1 CODE-ISSUER
+# severity<TAB>flags<TAB>hash(v1)<TAB>hash(current)
+```
+
+`-raw` prints the components step 5 compares. With `-preimage-version` it
+prints a fourth field, the hash under the encoding the current binary picks,
+so you can tell an evidence change (neither matches) from a mislabelled
+version (only the fourth matches) — the same distinction
+`scripts/reproducibility.sh` reports as `MISMATCH` versus `ENCODING`.
+`-preimage` prints the canonical bytes those hashes are SHA-256 over, so the
+check is independent of Assay: the encoding is specified line by line in
 [contract-interface.md](contract-interface.md#evidence_hash-commits-to-the-claims-not-to-the-clock),
 including the escaping, the sort order of `evidence` lines, and the deliberate
 exclusion of retrieval timestamps.
@@ -203,13 +217,15 @@ attested_at      1786771651  (2026-08-15T05:27:31Z)
 
 Step 1 must re-derive `CAOM5NKB…`; step 2 must read back severity `3`, flags
 `6`, and that hash; steps 3–4 must produce a *complete* report whose `-raw`
-output is
+output under the recorded version is
 
-```
-3	6	ca9b13a66f3a0a4b43d66dea29a505658447e08eee200d2bdb5e66aa1065fb4d
+```sh
+./assay attestation -raw -preimage-version v1 USDZ-GAKTLPC4ZV37SSCITQ5IS5AQ4WPF4CF4VZJQPPAROSGXMYOATF5U6XPR
+# 3	6	ca9b13a66f3a0a4b43d66dea29a505658447e08eee200d2bdb5e66aa1065fb4d	<current-encoding hash>
 ```
 
-Step 5 matches on all three, and step 6 returns **valid**. The reason `USDZ`
+Step 5 matches on severity, flags and the first hash, and step 6 returns
+**valid**. The reason `USDZ`
 reproduces reliably is that its evidence carries no transport error: its domain
 `zeam.money` answers, so nothing machine-dependent enters the preimage. That is
 not true of every attested asset — see cause 3 above.
