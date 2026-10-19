@@ -10,7 +10,7 @@ NETWORK ?= testnet
 SOURCE ?= assay-attester
 CONTRACT_ID ?= CBK4FBIHMDTXCUPE4E3ZDVSFJSCY5FJETTKNIQPN4LFJIKKIBLKIXQ73
 
-.PHONY: all build build-release test test-notify test-reproducibility cover lint fmt vet run clean \
+.PHONY: all build build-release test test-notify test-preimage test-reproducibility cover lint fmt vet run clean \
 	offline-test \
 	contract-test contract-lint contract-build \
 	build-contract deploy-testnet attest read verify-gate verify-wasm \
@@ -58,6 +58,14 @@ test-notify:
 # even though the script it tests does.
 test-reproducibility:
 	bash ./scripts/test-reproducibility.sh
+
+# test-preimage runs the independent Python encoder (written from
+# docs/contract-interface.md alone) against the Go encoder over every committed
+# vector, every internal/mechanics/testdata subject, and the language-neutral
+# conformance cases. CI runs this as its own job; a deliberate encoding change
+# fails here until the specification and both implementations agree.
+test-preimage:
+	go test ./internal/attest/ -run IndependentEncoder -v
 
 # cover prints the same per-package table CI puts in the job summary
 # (scripts/coverage-report.sh), lowest coverage first. It reports; it does not

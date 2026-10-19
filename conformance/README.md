@@ -20,6 +20,12 @@ against this directory alone.
   `internal/attest/conformance_test.go` replays every case through
   `attest.FromReport` and also re-hashes the expected preimage against the
   expected digest, so a case cannot pin bytes its own digest disagrees with.
+- **Python (this repo, runs in CI):** `make test-preimage` drives
+  [`scripts/preimage_encoder.py`](../scripts/preimage_encoder.py), an
+  independent implementation written from the specification alone. It runs
+  the conformance cases together with every committed vector and every
+  `internal/mechanics/testdata` subject, comparing its preimage bytes and
+  digests against the Go encoder's.
 - **Anything else:** for each case, parse `input` as a report, render the
   preimage per the grammar, and compare it byte-for-byte with `preimage`;
   then check `SHA-256(preimage) == digest`. Nothing in this directory is

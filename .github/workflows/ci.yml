@@ -133,6 +133,33 @@ jobs:
       # every PR. This comment exists so the absence is a recorded decision
       # rather than an oversight.
 
+  # The encoding has been reimplemented by hand from the specification twice,
+  # and both times the mistake was invisible until someone compared hashes.
+  # This job runs a second implementation (scripts/preimage_encoder.py, written
+  # from docs/contract-interface.md alone) over every committed vector, every
+  # internal/mechanics/testdata subject, and the language-neutral conformance
+  # cases. A change that moves the Go bytes without moving the Python bytes --
+  # or the other way around -- fails here instead of shipping as a hash
+  # mismatch. No network access and no third-party services; python3 is part of
+  # the runner image and is checked explicitly so a missing interpreter cannot
+  # turn the job into a silent pass.
+  preimage-cross-check:
+    name: Independent preimage encoder
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: require python3
+        run: python3 --version
+
+      - name: compare independent encoder with Go
+        run: make test-preimage
+
   # The scanner is the instrument every attestation comes from. CI already
   # pins the toolchain it is built with, but nothing checked that two builds of
   # the same commit produce the same bytes -- which is what lets anyone rebuild
