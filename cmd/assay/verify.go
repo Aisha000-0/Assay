@@ -91,6 +91,10 @@ type LocalSide struct {
 	Flags        uint32   `json:"flags"`
 	EvidenceHash string   `json:"evidence_hash"`
 	Checks       []string `json:"checks,omitempty"`
+	// Encoding is the preimage encoding EvidenceHash was computed under: the
+	// one that reproduced the on-chain hash, or the newest the scan supports
+	// when none did.
+	Encoding string `json:"encoding,omitempty"`
 }
 
 // verifyAsset is the whole comparison. It never reports agreement for an
@@ -142,6 +146,20 @@ func verifyAsset(ctx context.Context, asset mechanics.Asset, maxAge int64, now t
 	}
 	res.Chain = chain
 
+	// The chain stores only the hash, not the encoding it was computed under,
+	// and a scan today binds more than the attestations on chain did: every
+	// live attestation is v1, every scan is v4. So the hash is compared under
+	// each encoding the scan supports, newest first. Each encoding is exactly
+	// specified, so a match under any one of them means the scan reproduces
+	// the attested evidence under that encoding; it is reported as such.
+	res.Local.Encoding = firstLineOf(params.Preimage)
+	if !strings.EqualFold(params.EvidenceHash, chain.EvidenceHash) {
+		if enc, hash, ok := matchingEncoding(report, chain.EvidenceHash); ok {
+			res.Local.EvidenceHash, res.Local.Encoding = hash, enc
+			params.EvidenceHash = hash
+		}
+	}
+
 	// Compare the three attested fields by name, so a mismatch says which
 	// field moved instead of a generic "not equal".
 	var diff []string
@@ -179,6 +197,26 @@ func verifyAsset(ctx context.Context, asset mechanics.Asset, maxAge int64, now t
 	res.Outcome = outcomeAgree
 	res.Detail = "on-chain attestation matches the live scan"
 	return res, nil
+}
+
+// matchingEncoding re-renders a report under each older encoding it supports
+// and returns the first whose hash equals want.
+func matchingEncoding(report *mechanics.Report, want string) (encoding, hash string, ok bool) {
+	for _, enc := range []string{"v3", "v2", "v1"} {
+		p, err := attest.FromReportAs(report, enc)
+		if err != nil {
+			continue // the scan does not carry what this encoding binds
+		}
+		if strings.EqualFold(p.EvidenceHash, want) {
+			return firstLineOf(p.Preimage), p.EvidenceHash, true
+		}
+	}
+	return "", "", false
+}
+
+func firstLineOf(s string) string {
+	line, _, _ := strings.Cut(s, "\n")
+	return line
 }
 
 // stellarRegistryReader is the production registryReader: it derives the
