@@ -1375,6 +1375,53 @@ fn attestations_survive_admin_transfer_and_follow_the_new_admin() {
     assert!(client.get_safety(&other).is_some());
 }
 
+#[test]
+fn admin_and_pending_admin_getters_reflect_lifecycle() {
+    let env = Env::default();
+    let contract_id = env.register(SafetyRegistry, ());
+    let client = SafetyRegistryClient::new(&env, &contract_id);
+
+    // Before init: both return None
+    assert_eq!(client.admin(), None);
+    assert_eq!(client.pending_admin(), None);
+
+    let a = Address::generate(&env);
+    let b = Address::generate(&env);
+    client.init(&a);
+
+    // After init: admin is Some(a), pending_admin is None
+    assert_eq!(client.admin(), Some(a.clone()));
+    assert_eq!(client.pending_admin(), None);
+
+    // Transfer initiated: admin is still Some(a), pending_admin is Some(b)
+    client.mock_auths(&[MockAuth {
+        address: &a,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "transfer_admin",
+            args: (&b,).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]).transfer_admin(&b);
+
+    assert_eq!(client.admin(), Some(a));
+    assert_eq!(client.pending_admin(), Some(b.clone()));
+
+    // Transfer accepted: admin is Some(b), pending_admin is cleared back to None
+    client.mock_auths(&[MockAuth {
+        address: &b,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "accept_admin",
+            args: ().into_val(&env),
+            sub_invokes: &[],
+        },
+    }]).accept_admin();
+
+    assert_eq!(client.admin(), Some(b));
+    assert_eq!(client.pending_admin(), None);
+}
+
 /// `attest_many` is all-or-nothing (threat model class 3). The fixed-position
 /// test above covers one size and one position; this sweeps batch size
 /// (1…[`MAX_BATCH_SIZE`]), the position of the invalid element, and the kind of

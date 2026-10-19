@@ -426,6 +426,22 @@ impl SafetyRegistry {
         Ok(())
     }
 
+    /// Reads the current contract admin, if initialized.
+    ///
+    /// Returns `None` before [`Self::init`] has been called, and `Some(Address)`
+    /// afterwards.
+    pub fn admin(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::Admin)
+    }
+
+    /// Reads the pending admin during a two-step admin transfer, if any.
+    ///
+    /// Returns `Some(Address)` between [`Self::transfer_admin`] and [`Self::accept_admin`],
+    /// and `None` when no transfer is pending.
+    pub fn pending_admin(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::PendingAdmin)
+    }
+
     /// Writes an attestation for `asset`, identified by its SAC address.
     ///
     /// `severity`, `flags`, and `evidence_hash` come from the off-chain
