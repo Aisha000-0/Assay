@@ -242,6 +242,9 @@ follows the steps for USDZ and confirms the re-scan reproduces the hash recorded
 in [deployment.md](deployment.md). If a step cannot be followed without reading
 the source, that is a defect in this document.
 
+For automated end-to-end verification of every live attestation against the chain,
+see [`examples/verify-all.sh`](../examples/verify-all.sh).
+
 ## Related
 
 - [contract-interface.md](contract-interface.md) — the `evidence_hash` encoding
