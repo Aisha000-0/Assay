@@ -118,6 +118,16 @@ See [docs/adding-a-check.md](adding-a-check.md) and [docs/eval.md](eval.md).
 is run over fixtures and compared byte-for-byte against the committed
 `.preimage` and `.digest` files under `internal/attest/testdata/vectors/`.
 
+Those vectors still compare Go with bytes the Go encoder is expected to
+produce. To catch a mistake that is internally consistent — the empty-checks
+line regression was one — a second encoder lives in
+[`scripts/preimage_encoder.py`](../scripts/preimage_encoder.py). It was written
+from [`docs/contract-interface.md`](contract-interface.md) alone, not from the
+Go implementation, and CI runs it over every committed vector, every
+`internal/mechanics/testdata` subject, and the language-neutral conformance
+cases. Both encoders must produce identical preimage bytes and SHA-256 digests;
+run the same check locally with `make test-preimage`.
+
 ## Why the fixture loader cannot express a fetch error
 
 This is the constraint that decides between style 2 and style 3, so it is worth
