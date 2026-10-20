@@ -207,9 +207,7 @@ impl ExampleGate {
 
         let key = DataKey::Balance(asset, from);
         let current: i128 = env.storage().persistent().get(&key).unwrap_or(0);
-        let new_balance = current
-            .checked_add(amount)
-            .ok_or(Error::BalanceOverflow)?;
+        let new_balance = current.checked_add(amount).ok_or(Error::BalanceOverflow)?;
         env.storage().persistent().set(&key, &new_balance);
         Ok(())
     }
