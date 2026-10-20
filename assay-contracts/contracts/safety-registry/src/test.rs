@@ -734,15 +734,17 @@ fn ttl_admin_transfer_entrypoints_extend_instance_to_network_max() {
     assert_eq!(instance_ttl(&env, &client), max - 10_000);
 
     // transfer_admin extends instance TTL to max.
-    client.mock_auths(&[MockAuth {
-        address: &a,
-        invoke: &MockAuthInvoke {
-            contract: &contract_id,
-            fn_name: "transfer_admin",
-            args: (&b,).into_val(&env),
-            sub_invokes: &[],
-        },
-    }]).transfer_admin(&b);
+    client
+        .mock_auths(&[MockAuth {
+            address: &a,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "transfer_admin",
+                args: (&b,).into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .transfer_admin(&b);
     assert_eq!(instance_ttl(&env, &client), max);
 
     // Advance sequence again.
@@ -751,15 +753,17 @@ fn ttl_admin_transfer_entrypoints_extend_instance_to_network_max() {
     assert_eq!(instance_ttl(&env, &client), max - 10_000);
 
     // accept_admin extends instance TTL to max.
-    client.mock_auths(&[MockAuth {
-        address: &b,
-        invoke: &MockAuthInvoke {
-            contract: &contract_id,
-            fn_name: "accept_admin",
-            args: ().into_val(&env),
-            sub_invokes: &[],
-        },
-    }]).accept_admin();
+    client
+        .mock_auths(&[MockAuth {
+            address: &b,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "accept_admin",
+                args: ().into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .accept_admin();
     assert_eq!(instance_ttl(&env, &client), max);
 }
 
@@ -1442,32 +1446,114 @@ fn admin_and_pending_admin_getters_reflect_lifecycle() {
     assert_eq!(client.pending_admin(), None);
 
     // Transfer initiated: admin is still Some(a), pending_admin is Some(b)
-    client.mock_auths(&[MockAuth {
-        address: &a,
-        invoke: &MockAuthInvoke {
-            contract: &contract_id,
-            fn_name: "transfer_admin",
-            args: (&b,).into_val(&env),
-            sub_invokes: &[],
-        },
-    }]).transfer_admin(&b);
+    client
+        .mock_auths(&[MockAuth {
+            address: &a,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "transfer_admin",
+                args: (&b,).into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .transfer_admin(&b);
 
     assert_eq!(client.admin(), Some(a));
     assert_eq!(client.pending_admin(), Some(b.clone()));
 
     // Transfer accepted: admin is Some(b), pending_admin is cleared back to None
-    client.mock_auths(&[MockAuth {
-        address: &b,
-        invoke: &MockAuthInvoke {
-            contract: &contract_id,
-            fn_name: "accept_admin",
-            args: ().into_val(&env),
-            sub_invokes: &[],
-        },
-    }]).accept_admin();
+    client
+        .mock_auths(&[MockAuth {
+            address: &b,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "accept_admin",
+                args: ().into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .accept_admin();
 
     assert_eq!(client.admin(), Some(b));
     assert_eq!(client.pending_admin(), None);
+}
+
+/// Only the current admin may nominate a successor. The `MockAuth` grants the
+/// intruder authorization for this very call, so the rejection below is the
+/// contract's `require_auth` on the stored admin and not an artefact of the
+/// harness — without it (mutation R-M6) the call succeeds.
+///
+/// The probe after the rejection is what makes the state observable: if the
+/// nomination had landed, `accept_admin` would promote the proposed address,
+/// so a refusal with `NoPendingAdmin` proves nothing was written. This test
+/// also keeps `transfer_admin` honest about its caller in a way the happy-path
+/// transfer in `attestations_survive_admin_transfer_and_follow_the_new_admin`
+/// cannot: that test mocks auth for the admin, and an entrypoint with
+/// `require_auth` deleted passes it unchanged.
+#[test]
+fn transfer_admin_rejects_unauthorized_caller() {
+    let env = Env::default();
+    let contract_id = env.register(SafetyRegistry, ());
+    let client = SafetyRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    client.init(&admin);
+
+    let intruder = Address::generate(&env);
+    let proposed = Address::generate(&env);
+
+    let err = client
+        .mock_auths(&[MockAuth {
+            address: &intruder,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "transfer_admin",
+                args: (&proposed,).into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .try_transfer_admin(&proposed)
+        .expect_err("a non-admin must not nominate a pending admin");
+    // As in `revoke_rejects_unauthorized_caller`, the rejection is the host's
+    // auth error rather than a contract `Error`; what matters is that it is one.
+    assert!(err.is_err());
+
+    // Nothing was written: there is no pending nomination to accept.
+    env.mock_all_auths();
+    let err = client
+        .try_accept_admin()
+        .expect_err("the rejected nomination must leave no pending admin");
+    assert_eq!(err, Ok(Error::NoPendingAdmin));
+}
+
+/// A completed transfer consumes the pending nomination. After `accept_admin`,
+/// a replay — by the new admin or anyone holding their key — must fail with
+/// `NoPendingAdmin` instead of re-running the promotion: an accepted
+/// nomination is gone, not merely superseded. Removing the cleanup
+/// (mutation R-M7) leaves the pending address set, and the replay below
+/// succeeds instead of failing.
+#[test]
+fn accept_admin_consumes_the_pending_nomination() {
+    let (env, client, _admin) = setup();
+    let successor = Address::generate(&env);
+
+    client.transfer_admin(&successor);
+    client.accept_admin();
+
+    // The promotion happened and the nomination it consumed is gone.
+    let err = client
+        .try_accept_admin()
+        .expect_err("a pending nomination must not survive its own acceptance");
+    assert_eq!(err, Ok(Error::NoPendingAdmin));
+
+    // The slot is reusable: a later nomination is written, consumed, and
+    // consumed only once, so the cleanup is not "remove on first transfer".
+    let later = Address::generate(&env);
+    client.transfer_admin(&later);
+    client.accept_admin();
+    let err = client
+        .try_accept_admin()
+        .expect_err("the second nomination must be consumed by its acceptance");
+    assert_eq!(err, Ok(Error::NoPendingAdmin));
 }
 
 /// `attest_many` is all-or-nothing (threat model class 3). The fixed-position
@@ -1575,7 +1661,7 @@ fn version_returns_interface_version() {
 /// a deliberate ABI change, which must be mirrored in docs/contract-interface.md.
 #[test]
 fn interface_version_is_abi() {
-    assert_eq!(INTERFACE_VERSION, 1);
+    assert_eq!(INTERFACE_VERSION, 2);
 }
 
 /// Results come back in the order the assets were asked for, and an asset that
@@ -1780,12 +1866,7 @@ fn quorum_conservative_aggregation_one_honest_attestor_prevents_admission() {
     let malicious = Address::generate(&env);
 
     // Honest attestor reports SEVERITY_HIGH and clawback
-    client.attest(
-        &asset,
-        &SEVERITY_HIGH,
-        &MECH_CLAWBACK_ENABLED,
-        &hash(&env),
-    );
+    client.attest(&asset, &SEVERITY_HIGH, &MECH_CLAWBACK_ENABLED, &hash(&env));
 
     // Malicious attestor claims SEVERITY_CLEAR and 0 flags
     env.as_contract(&client.address, || {
@@ -1819,15 +1900,16 @@ fn quorum_conservative_aggregation_property() {
     let asset = Address::generate(&env);
 
     // Honest attestor sets severity to HIGH (3)
-    client.attest(
-        &asset,
-        &SEVERITY_HIGH,
-        &0,
-        &hash(&env),
-    );
+    client.attest(&asset, &SEVERITY_HIGH, &0, &hash(&env));
 
     // Generate up to 5 other attestors with arbitrary severities (including 0, 1, 2)
-    let other_severities = [SEVERITY_CLEAR, SEVERITY_LOW, SEVERITY_MEDIUM, SEVERITY_CLEAR, SEVERITY_LOW];
+    let other_severities = [
+        SEVERITY_CLEAR,
+        SEVERITY_LOW,
+        SEVERITY_MEDIUM,
+        SEVERITY_CLEAR,
+        SEVERITY_LOW,
+    ];
     let mut attestors = Vec::new(&env);
     attestors.push_back(admin);
 
@@ -1857,7 +1939,6 @@ fn quorum_conservative_aggregation_property() {
         }
     }
 }
-
 
 #[test]
 fn quorum_cost_at_the_bound() {
@@ -1898,7 +1979,9 @@ fn quorum_cost_at_the_bound() {
 
     assert_eq!(r.contract_events_size_bytes, 0);
     assert!(footprint <= 400, "footprint entries {footprint} exceed 400");
-    assert!(r.instructions <= 400_000_000, "instructions exceed 400 000 000");
+    assert!(
+        r.instructions <= 400_000_000,
+        "instructions exceed 400 000 000"
+    );
     assert!(r.mem_bytes <= 41_943_040, "memory exceeds 41 943 040");
 }
-
