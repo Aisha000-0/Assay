@@ -282,20 +282,20 @@ func verifyBundle(path string, asJSON bool, w io.Writer) (int, error) {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(v); err != nil {
-			return exitGeneric, err
+			return exitGeneric, fmt.Errorf("verify: encode result: %w", err)
 		}
 	} else if v.OK {
-		fmt.Fprintf(w, "OK %s\n", v.Asset)
-		fmt.Fprintf(w, "digest: %s\n", v.ComputedDigest)
-		fmt.Fprintf(w, "scanner: %s\n", v.Scanner)
-		fmt.Fprintf(w, "preimage: %s (%s)\n", v.Preimage.Version, v.Preimage.Asset)
+		_, _ = fmt.Fprintf(w, "OK %s\n", v.Asset)
+		_, _ = fmt.Fprintf(w, "digest: %s\n", v.ComputedDigest)
+		_, _ = fmt.Fprintf(w, "scanner: %s\n", v.Scanner)
+		_, _ = fmt.Fprintf(w, "preimage: %s (%s)\n", v.Preimage.Version, v.Preimage.Asset)
 		for _, note := range v.Notes {
-			fmt.Fprintf(w, "note: %s\n", note)
+			_, _ = fmt.Fprintf(w, "note: %s\n", note)
 		}
 	} else {
-		fmt.Fprintf(w, "MISMATCH %s\n", v.Asset)
+		_, _ = fmt.Fprintf(w, "MISMATCH %s\n", v.Asset)
 		for _, e := range v.Errors {
-			fmt.Fprintf(w, "  %s\n", e)
+			_, _ = fmt.Fprintf(w, "  %s\n", e)
 		}
 	}
 

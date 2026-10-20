@@ -401,7 +401,7 @@ func runAttestation(args []string, d commandDeps) error {
 		if err != nil {
 			return fmt.Errorf("create bundle recording directory: %w", err)
 		}
-		defer os.RemoveAll(dir)
+		defer func() { _ = os.RemoveAll(dir) }()
 		recordingDir = dir
 		// Record into a private directory first; the archive is written only
 		// after the report is derived, so a failed scan leaves no half bundle.
@@ -429,7 +429,7 @@ func runAttestation(args []string, d commandDeps) error {
 		// be missing every response.
 		finish()
 		if err := bundle.Write(*bundleOut, report, params, recordingDir); err != nil {
-			return err
+			return fmt.Errorf("write verification bundle %s: %w", *bundleOut, err)
 		}
 		_, _ = fmt.Fprintf(d.stderr, "assay: wrote verification bundle %s\n", *bundleOut)
 	}

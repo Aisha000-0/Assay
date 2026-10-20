@@ -249,7 +249,7 @@ func writeArchive(outPath string, files map[string][]byte) error {
 	}()
 
 	gz := gzip.NewWriter(tmp)
-	gz.Header.ModTime = time.Unix(0, 0)
+	gz.ModTime = time.Unix(0, 0)
 	tw := tar.NewWriter(gz)
 
 	names := make([]string, 0, len(files))
@@ -341,13 +341,13 @@ func readArchive(path string) (map[string][]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("bundle: open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	gz, err := gzip.NewReader(f)
 	if err != nil {
 		return nil, fmt.Errorf("bundle: %s is not a gzip archive: %w", path, err)
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 	tr := tar.NewReader(gz)
 
 	files := map[string][]byte{}
@@ -500,7 +500,7 @@ func (b *Bundle) checkReportAgainstPreimage() error {
 	}
 	m, err := mechanics.ParseMechanicNames(rep.MechanicNames)
 	if err != nil {
-		return err
+		return fmt.Errorf("bundle: manifest mechanics: %w", err)
 	}
 	if got := fmt.Sprintf("%d", uint32(m)); fields["mechanics"] != got {
 		return fmt.Errorf("mechanics %s vs %s", got, fields["mechanics"])

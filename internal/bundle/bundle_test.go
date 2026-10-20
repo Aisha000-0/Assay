@@ -24,7 +24,7 @@ func testReport() *mechanics.Report {
 		Network:        "Test SDF Network ; September 2015",
 		ScannerBound:   true,
 		Mechanics:      mechanics.MechAuthRevocable | mechanics.MechDomainUnverified,
-		MechanicNames:  mechanics.Mechanic(mechanics.MechAuthRevocable | mechanics.MechDomainUnverified).Names(),
+		MechanicNames:  (mechanics.MechAuthRevocable | mechanics.MechDomainUnverified).Names(),
 		Evidence: []mechanics.Evidence{
 			{
 				Source:      "horizon",

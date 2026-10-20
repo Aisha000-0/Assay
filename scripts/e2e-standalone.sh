@@ -127,10 +127,15 @@ REGISTRY=$(stellar contract deploy --wasm "$REGISTRY_WASM" \
 stellar contract invoke --id "$REGISTRY" --source-account "$SOURCE" \
   "${NETWORK_ARGS[@]}" -- init --admin "$ADMIN" >/dev/null
 
+# The gate's freshness policy is a real age window, not the registry helper's
+# "0 disables the check": check_policy treats any attestation older than
+# max_age_secs as stale, and an attestation submitted in an earlier ledger is
+# already older than zero. One day matches the example's own default and keeps
+# the assertions about how the gate decides, not about ledger timing.
 log "deploying the example gate (max severity 2, refuse freeze and clawback)"
 GATE=$(stellar contract deploy --wasm "$GATE_WASM" \
   --source-account "$SOURCE" "${NETWORK_ARGS[@]}" -- \
-  --registry "$REGISTRY" --max_severity 2 --max_age_secs 0 --refused_mechanics 6)
+  --registry "$REGISTRY" --max_severity 2 --max_age_secs 86400 --refused_mechanics 6)
 
 # invoke_read returns an invocation's value without submitting a transaction.
 # Every read assertion below uses it, so no state changes while asserting.

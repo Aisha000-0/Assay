@@ -50,7 +50,7 @@ func run(args []string, w io.Writer) error {
 	fixtures := fs.String("fixtures", "internal/mechanics/testdata", "corpus fixture root")
 	network := fs.String("network", DefaultNetwork, "network passphrase the report is bound to")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return fmt.Errorf("attestfixture: %w", err)
 	}
 	if fs.NArg() != 0 {
 		return fmt.Errorf("attestfixture takes no positional arguments")
@@ -63,9 +63,11 @@ func run(args []string, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(w, "%s\t%d\t%d\t%s\n",
-		asset, params.Severity, params.Flags, params.EvidenceHash)
-	return err
+	if _, err := fmt.Fprintf(w, "%s\t%d\t%d\t%s\n",
+		asset, params.Severity, params.Flags, params.EvidenceHash); err != nil {
+		return fmt.Errorf("write output: %w", err)
+	}
+	return nil
 }
 
 // paramsForFixture is separated from flag handling so the three e2e subjects

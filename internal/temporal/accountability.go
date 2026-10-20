@@ -2,8 +2,8 @@ package temporal
 
 import "github.com/use-assay/assay/internal/mechanics"
 
-// AccountabilityTransition reports whether the party publicly claiming an asset
-// changed between two observations.
+// AccountabilityMovement is the accountability axis of a transition: whether
+// the party publicly claiming an asset changed between two observations.
 //
 // Accountability is deliberately independent of severity: a verified domain
 // does not make confiscation safer, and losing verification does not give an

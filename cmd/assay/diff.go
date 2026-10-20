@@ -79,7 +79,7 @@ func runDiff(args []string, d commandDeps) error {
 	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "print the comparison as JSON for scripting")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return fmt.Errorf("diff: %w", err)
 	}
 	if fs.NArg() != 2 {
 		return fmt.Errorf("diff takes exactly two saved reports (A.json B.json)")
@@ -106,7 +106,10 @@ func runDiff(args []string, d commandDeps) error {
 	if *asJSON {
 		enc := json.NewEncoder(d.stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(res)
+		if err := enc.Encode(res); err != nil {
+			return fmt.Errorf("diff: encode comparison: %w", err)
+		}
+		return nil
 	}
 	printDiff(d.stdout, res)
 	return nil
@@ -176,7 +179,7 @@ func diffReports(fromPath, toPath string, fromRep, toRep *mechanics.Report) (*di
 func observationFromSavedReport(rep *mechanics.Report) (temporal.Observation, error) {
 	m, err := mechanics.ParseMechanicNames(rep.MechanicNames)
 	if err != nil {
-		return temporal.Observation{}, err
+		return temporal.Observation{}, fmt.Errorf("diff: %w", err)
 	}
 	return temporal.Observation{
 		Asset:              rep.Asset,
@@ -207,66 +210,66 @@ func sideOfObservation(o temporal.Observation) diffSide {
 // rather than an empty movement, so "could not compare" never reads as "no
 // change".
 func printDiff(w io.Writer, r *diffResult) {
-	fmt.Fprintf(w, "%s -> %s\n", r.From, r.To)
-	fmt.Fprintf(w, "asset: %s\n", r.Asset)
-	fmt.Fprintf(w, "from:  %s\n", sideLine(r.FromObservation))
-	fmt.Fprintf(w, "to:    %s\n", sideLine(r.ToObservation))
+	_, _ = fmt.Fprintf(w, "%s -> %s\n", r.From, r.To)
+	_, _ = fmt.Fprintf(w, "asset: %s\n", r.Asset)
+	_, _ = fmt.Fprintf(w, "from:  %s\n", sideLine(r.FromObservation))
+	_, _ = fmt.Fprintf(w, "to:    %s\n", sideLine(r.ToObservation))
 
 	printCapability(w, "added", r.Capability.Added)
 	printCapability(w, "removed", r.Capability.Removed)
 
-	fmt.Fprintln(w, "severity:")
+	_, _ = fmt.Fprintln(w, "severity:")
 	if r.Severity.State != temporal.Valid {
-		fmt.Fprintf(w, "  %s\n", nonValid(r.Severity.State, r.Severity.Reason))
+		_, _ = fmt.Fprintf(w, "  %s\n", nonValid(r.Severity.State, r.Severity.Reason))
 	} else if r.Severity.BaseBefore == r.Severity.BaseAfter && r.Severity.Before == r.Severity.After {
-		fmt.Fprintf(w, "  unchanged (base %s, final %s)\n", r.Severity.BaseAfter, r.Severity.After)
+		_, _ = fmt.Fprintf(w, "  unchanged (base %s, final %s)\n", r.Severity.BaseAfter, r.Severity.After)
 	} else {
-		fmt.Fprintf(w, "  base:\t%s -> %s\n", r.Severity.BaseBefore, r.Severity.BaseAfter)
-		fmt.Fprintf(w, "  final:\t%s -> %s\n", r.Severity.Before, r.Severity.After)
-		fmt.Fprintf(w, "  attribution: %s\n", r.Severity.Attribution)
+		_, _ = fmt.Fprintf(w, "  base:\t%s -> %s\n", r.Severity.BaseBefore, r.Severity.BaseAfter)
+		_, _ = fmt.Fprintf(w, "  final:\t%s -> %s\n", r.Severity.Before, r.Severity.After)
+		_, _ = fmt.Fprintf(w, "  attribution: %s\n", r.Severity.Attribution)
 	}
 
-	fmt.Fprintln(w, "accountability:")
+	_, _ = fmt.Fprintln(w, "accountability:")
 	if r.Accountability.State != temporal.Valid {
-		fmt.Fprintf(w, "  %s\n", nonValid(r.Accountability.State, r.Accountability.Reason))
+		_, _ = fmt.Fprintf(w, "  %s\n", nonValid(r.Accountability.State, r.Accountability.Reason))
 	} else if !r.Accountability.Changed {
-		fmt.Fprintf(w, "  unchanged (%s)\n", r.Accountability.After)
+		_, _ = fmt.Fprintf(w, "  unchanged (%s)\n", r.Accountability.After)
 	} else {
-		fmt.Fprintf(w, "  %s -> %s\n", r.Accountability.Before, r.Accountability.After)
+		_, _ = fmt.Fprintf(w, "  %s -> %s\n", r.Accountability.Before, r.Accountability.After)
 	}
 
-	fmt.Fprintln(w, "evidence:")
+	_, _ = fmt.Fprintln(w, "evidence:")
 	switch {
 	case r.Evidence.State != temporal.Valid:
-		fmt.Fprintf(w, "  %s\n", nonValid(r.Evidence.State, r.Evidence.Reason))
+		_, _ = fmt.Fprintf(w, "  %s\n", nonValid(r.Evidence.State, r.Evidence.Reason))
 	case r.Evidence.VerdictChanged:
-		fmt.Fprintf(w, "  verdict changed; no evidence-only comparison\n  %s\n", r.Evidence.Reason)
+		_, _ = fmt.Fprintf(w, "  verdict changed; no evidence-only comparison\n  %s\n", r.Evidence.Reason)
 	case r.Evidence.Unchanged:
-		fmt.Fprintln(w, "  unchanged")
+		_, _ = fmt.Fprintln(w, "  unchanged")
 	default:
 		for _, e := range r.Evidence.Events {
-			fmt.Fprintf(w, "  %s\n", temporal.DescribeEvidenceEvent(e))
+			_, _ = fmt.Fprintf(w, "  %s\n", temporal.DescribeEvidenceEvent(e))
 		}
 	}
 
 	if !r.Changed {
-		fmt.Fprintln(w, "result: no change (or no comparison, as stated above)")
+		_, _ = fmt.Fprintln(w, "result: no change (or no comparison, as stated above)")
 	} else {
-		fmt.Fprintln(w, "result: changed")
+		_, _ = fmt.Fprintln(w, "result: changed")
 	}
 }
 
 func printCapability(w io.Writer, label string, d temporal.CapabilityDelta) {
-	fmt.Fprintf(w, "capability %s:\n", label)
+	_, _ = fmt.Fprintf(w, "capability %s:\n", label)
 	if d.State != temporal.Valid {
-		fmt.Fprintf(w, "  %s\n", nonValid(d.State, d.Reason))
+		_, _ = fmt.Fprintf(w, "  %s\n", nonValid(d.State, d.Reason))
 		return
 	}
 	if len(d.Names) == 0 {
-		fmt.Fprintln(w, "  none")
+		_, _ = fmt.Fprintln(w, "  none")
 		return
 	}
-	fmt.Fprintf(w, "  %s\n", strings.Join(d.Names, ", "))
+	_, _ = fmt.Fprintf(w, "  %s\n", strings.Join(d.Names, ", "))
 }
 
 func sideLine(s diffSide) string {
