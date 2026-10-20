@@ -101,11 +101,13 @@ mechanic, and you need to pin its *judgment* on real assets.
 
 The eval is `TestEval` (aggregate) and `TestEvalPerCheck` (per check) in
 [`internal/mechanics/eval_test.go`](../internal/mechanics/eval_test.go). Both
-iterate `eval.Corpus()` and rebuild each subject with `eval.LoadSubject`, which
+iterate the corpus `eval.Corpus` loads from each subject's `metadata.json` and
+rebuild each subject with `eval.LoadSubject`, which
 decodes files under `internal/mechanics/testdata/<case-name>/` using the same
 decoders as the live fetchers. A fixture that parses in the test is therefore
 one the real client would have accepted. The labels and their rationale live in
-one place — [`internal/eval`](../internal/eval) and
+one place — the metadata files beside the fixtures, loaded by
+[`internal/eval`](../internal/eval) and documented in
 [docs/eval.md](eval.md) — so the aggregate and per-check expectations cannot
 describe different runs.
 
