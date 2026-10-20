@@ -324,7 +324,7 @@ Cite what you verified in the PR.
 ## Checklist
 
 ```sh
-make test    # go test -race ./...
+make test    # go test -race -shuffle=on ./...
 make lint    # golangci-lint
 make fmt     # gofmt -w .
 ```
