@@ -270,14 +270,14 @@ func runVerify(args []string) error {
 	maxAge := fs.Int64("max-age", 0, "treat an attestation older than this many seconds as stale (0 disables the age check)")
 	asJSON := fs.Bool("json", false, "print the verdict as JSON for scripting")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return fmt.Errorf("verify: %w", err)
 	}
 	if fs.NArg() != 1 {
 		return fmt.Errorf("verify takes exactly one asset (CODE-ISSUER)")
 	}
 	asset, err := scan.ParseAsset(fs.Arg(0))
 	if err != nil {
-		return err
+		return fmt.Errorf("verify: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -296,7 +296,7 @@ func runVerify(args []string) error {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(res); err != nil {
-			return err
+			return fmt.Errorf("verify: write: %w", err)
 		}
 	} else {
 		fmt.Printf("%s: %s\n", strings.ToUpper(string(res.Outcome)), res.Asset)
