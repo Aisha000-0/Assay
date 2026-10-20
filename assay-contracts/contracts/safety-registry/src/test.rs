@@ -1558,7 +1558,7 @@ fn version_returns_interface_version() {
 /// a deliberate ABI change, which must be mirrored in docs/contract-interface.md.
 #[test]
 fn interface_version_is_abi() {
-    assert_eq!(INTERFACE_VERSION, 1);
+    assert_eq!(INTERFACE_VERSION, 2);
 }
 
 /// Results come back in the order the assets were asked for, and an asset that
