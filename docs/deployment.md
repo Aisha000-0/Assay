@@ -600,11 +600,16 @@ Two-step transfer prevents accidental transfer to an unowned address or typo:
    stellar contract invoke --id <CONTRACT_ID> --source-account <NEW_ADMIN_KEY> \
      --network testnet -- accept_admin
    ```
+3. **Cancel a pending transfer** (Current Admin, optional):
+   ```sh
+   stellar contract invoke --id <CONTRACT_ID> --source-account <CURRENT_ADMIN_KEY> \
+     --network testnet -- cancel_admin_transfer
+   ```
 
-After `accept_admin` succeeds, `new_admin` becomes the sole authorized attester and the old admin key loses all write permissions.
+After `accept_admin` succeeds, `new_admin` becomes the sole authorized attester and the old admin key loses all write permissions. `cancel_admin_transfer` withdraws a proposal before it is accepted; it leaves the current admin in place, emits an event, and makes a subsequent `accept_admin` fail with `NoPendingAdmin`.
 
 > [!NOTE]
-> Redeploying contract code: Adding `transfer_admin` and `accept_admin` requires redeploying the registry contract on testnet because Soroban contract WASM is immutable without an explicit upgrade entrypoint. Redeploying requires running `init(admin)` on the newly deployed instance and re-submitting attestations for the corpus assets.
+> Redeploying contract code: Adding `transfer_admin`, `accept_admin`, and `cancel_admin_transfer` requires redeploying the registry contract on testnet because Soroban contract WASM is immutable without an explicit upgrade entrypoint. Redeploying requires running `init(admin)` on the newly deployed instance and re-submitting attestations for the corpus assets.
 
 ## What this deployment is not
 

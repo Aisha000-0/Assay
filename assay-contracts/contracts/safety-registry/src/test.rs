@@ -1375,6 +1375,115 @@ fn attestations_survive_admin_transfer_and_follow_the_new_admin() {
     assert!(client.get_safety(&other).is_some());
 }
 
+/// A cancellation removes the pending proposal and publishes exactly one
+/// event naming the withdrawn address. The admin is unchanged by it.
+#[test]
+fn cancel_admin_transfer_clears_pending_and_emits_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(SafetyRegistry, ());
+    let client = SafetyRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let pending = Address::generate(&env);
+    client.init(&admin);
+    client.transfer_admin(&pending);
+
+    env.ledger().set_timestamp(4_321);
+    client.cancel_admin_transfer();
+
+    let mut data = Map::<Symbol, soroban_sdk::Val>::new(&env);
+    data.set(Symbol::new(&env, "cancelled_at"), 4_321u64.into_val(&env));
+    assert_eq!(
+        env.events().all().filter_by_contract(&client.address),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                (Symbol::new(&env, "cancel_admin"), pending.clone()).into_val(&env),
+                data.into_val(&env),
+            ),
+        ],
+    );
+
+    let stored_admin: Address = env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("the admin must be unchanged")
+    });
+    assert_eq!(stored_admin, admin);
+    let stored_pending: Option<Address> = env.as_contract(&client.address, || {
+        env.storage().instance().get(&DataKey::PendingAdmin)
+    });
+    assert_eq!(stored_pending, None);
+
+    let err = client
+        .try_accept_admin()
+        .expect_err("the cancelled proposal must not be acceptable");
+    assert_eq!(err, Ok(Error::NoPendingAdmin));
+}
+
+/// Cancelling with nothing pending is an error, not a silent no-op, and
+/// publishes nothing.
+#[test]
+fn cancel_admin_transfer_without_pending_returns_no_pending_admin() {
+    let env = Env::default();
+    let contract_id = env.register(SafetyRegistry, ());
+    let client = SafetyRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    client.init(&admin);
+
+    let err = client
+        .try_cancel_admin_transfer()
+        .expect_err("there is no pending transfer to cancel");
+    assert_eq!(err, Ok(Error::NoPendingAdmin));
+    assert_eq!(
+        env.events().all().filter_by_contract(&client.address),
+        vec![&env, /* empty: a failed cancel must not emit an event */],
+    );
+}
+
+/// Only the current admin can cancel, not the address that happens to be
+/// pending. A rejected cancel leaves the proposal in place.
+#[test]
+fn cancel_admin_transfer_requires_the_current_admin() {
+    let env = Env::default();
+    let contract_id = env.register(SafetyRegistry, ());
+    let client = SafetyRegistryClient::new(&env, &contract_id);
+    let a = Address::generate(&env);
+    let b = Address::generate(&env);
+    client.init(&a);
+
+    macro_rules! as_admin {
+        ($who:expr, $fn_name:expr, $args:expr) => {
+            client.mock_auths(&[MockAuth {
+                address: $who,
+                invoke: &MockAuthInvoke {
+                    contract: &contract_id,
+                    fn_name: $fn_name,
+                    args: $args.into_val(&env),
+                    sub_invokes: &[],
+                },
+            }])
+        };
+    }
+
+    as_admin!(&a, "transfer_admin", (&b,)).transfer_admin(&b);
+
+    let err = as_admin!(&b, "cancel_admin_transfer", ())
+        .try_cancel_admin_transfer()
+        .expect_err("the pending admin must not cancel its own proposal");
+    assert!(err.is_err());
+
+    // The proposal survives the rejected cancel, and the real admin can still
+    // withdraw it.
+    as_admin!(&a, "cancel_admin_transfer", ()).cancel_admin_transfer();
+    let err = as_admin!(&b, "accept_admin", ())
+        .try_accept_admin()
+        .expect_err("the cancelled proposal must not be acceptable");
+    assert_eq!(err, Ok(Error::NoPendingAdmin));
+}
+
 /// `attest_many` is all-or-nothing (threat model class 3). The fixed-position
 /// test above covers one size and one position; this sweeps batch size
 /// (1…[`MAX_BATCH_SIZE`]), the position of the invalid element, and the kind of
@@ -1480,7 +1589,7 @@ fn version_returns_interface_version() {
 /// a deliberate ABI change, which must be mirrored in docs/contract-interface.md.
 #[test]
 fn interface_version_is_abi() {
-    assert_eq!(INTERFACE_VERSION, 1);
+    assert_eq!(INTERFACE_VERSION, 2);
 }
 
 /// Results come back in the order the assets were asked for, and an asset that
