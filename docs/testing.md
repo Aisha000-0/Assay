@@ -185,7 +185,7 @@ grep -rn 'testdata\|httptest' internal/ --include='*_test.go'
 Then run the same checks CI runs:
 
 ```sh
-make test    # go test -race ./...
+make test    # go test -race -shuffle=on ./...
 make lint    # golangci-lint
 make fmt     # gofmt -w .
 ```

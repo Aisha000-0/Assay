@@ -53,7 +53,7 @@ Go development requires Go 1.26.9 or later. The `go` directive in
 `go.mod` is the source of truth for the minimum version.
 
 ```sh
-make test     # tests with -race
+make test     # tests with -race -shuffle=on
 make lint     # golangci-lint
 make cover    # per-package coverage table, lowest first
 make run      # start the API on :8080
