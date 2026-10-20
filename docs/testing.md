@@ -196,3 +196,28 @@ Use the Go version named in `go.mod` (**1.26.9**): every CI job pins to it via
 toolchain above the floor is fine — `attest-reproducibility` runs the golden
 preimage tests on `1.26.x` and `1.27.x` — but a toolchain below it cannot build
 the module. See [CONTRIBUTING.md](../CONTRIBUTING.md#go-toolchain).
+
+## End-to-end tests on a local network
+
+The Go and contract tests stop at their own boundary: Go derives
+`attest.Params`, and the contracts are exercised in the SDK's test
+environment. `scripts/e2e-standalone.sh` joins them against a local Stellar
+network (issue #463).
+
+It derives Params from the committed fixtures with
+`cmd/attestfixture`, submits them through the `stellar` CLI, and asserts
+`get_safety`, `is_safe_masked`, `is_safe` and the example gate's
+`would_admit`/`deposit` decisions for a clear, a high and a critical subject.
+The critical subject is reputation-only, so it proves the gate checks the
+severity ceiling as well as the forbidden-mechanics mask.
+
+```sh
+stellar container start local     # or the stellar/quickstart Action in CI
+make e2e-standalone
+```
+
+The script refuses a non-loopback RPC URL. It never contacts Horizon,
+StellarExpert, an issuer domain, testnet or pubnet; the only external traffic
+is the one-time setup of the quickstart image and the `stellar` CLI. The CI job
+runs on PRs touching contracts, `internal/attest`, the mechanism fixtures,
+`cmd/attestfixture`, the script or the Makefile.
