@@ -18,6 +18,7 @@ import (
 
 	"github.com/use-assay/assay/internal/api"
 	"github.com/use-assay/assay/internal/attest"
+	"github.com/use-assay/assay/internal/bundle"
 	// Aliased because this file already has a local history() for the CLI's
 	// evidence view; this package is the persisted observation store behind the
 	// HTTP endpoint, a different thing.
@@ -127,25 +128,27 @@ func usage(w io.Writer) {
 	_, _ = fmt.Fprint(w, `usage:
   assay scan CODE-ISSUER          classify one asset and print the report as JSON
   assay attestation CODE-ISSUER   print the on-chain attest() arguments for one asset
-  assay verify [-hash HEX] [-raw] [PREIMAGE]
-                                  check a canonical preimage against an evidence_hash
+  assay verify [-json] [-max-age SECS] CODE-ISSUER
+                                  compare a live scan with the on-chain attestation
+  assay verify -bundle IN [-json]
+                                  verify an offline bundle without a network
+  assay diff [-json] A.json B.json
+                                  compare two saved reports and print what changed
   assay history [-guarantee] [-raw] CODE-ISSUER
                                   print the asset's observation history
   assay registry-history [-rpc URL] [-contract C...] [-json] ASSET
                                   print the registry's attest/revoke events for an asset
                                   (CODE-ISSUER or SAC address), bounded by RPC event retention
-  assay serve [-addr]             serve the HTTP API and UI
-
-Every command that scans accepts:
-  -cache-directory-ttl D   reuse a curated directory answer for D (0 disables)
-  -cache-blocklist-ttl D   reuse a blocklist answer for D (0 disables)
-  -no-cache                re-fetch curated sources on every scan
   assay serve [-addr] [-history PATH]
                                   serve the HTTP API and UI
 
 Commands that scan also accept:
-  -asset-lists URL[,URL...]       SEP-0042 Stellar Asset Lists to consume
-                                  (repeatable). No list is used by default.
+  -cache-directory-ttl D   reuse a curated directory answer for D (0 disables)
+  -cache-blocklist-ttl D   reuse a blocklist answer for D (0 disables)
+  -no-cache                re-fetch curated sources on every scan
+  -asset-lists URL[,URL...]
+                           SEP-0042 Stellar Asset Lists to consume
+                           (repeatable). No list is used by default.
 
 The scan command additionally accepts:
   -record DIR             save every upstream response into DIR with a
@@ -159,6 +162,8 @@ The attestation command additionally accepts:
                           v4 or assay-evidence-vN) instead of the one the
                           report binds, so an already-recorded hash can be
                           reproduced from a fresh scan
+  -bundle OUT             also write an offline verification bundle (raw
+                          source bytes, report, preimage, digest) to OUT
 `)
 }
 
@@ -183,6 +188,8 @@ func runWith(args []string, d commandDeps) error {
 		return runHistory(args[1:], d)
 	case "verify":
 		return runVerify(args[1:])
+	case "diff":
+		return runDiff(args[1:], d)
 	case "registry-history":
 		return runRegistryHistory(args[1:], d)
 	case "serve":
@@ -359,6 +366,8 @@ func runAttestation(args []string, d commandDeps) error {
 	raw := fs.Bool("raw", false, "print only the attest() arguments, tab-separated, for scripting")
 	preimageVersion := fs.String("preimage-version", "",
 		"render the preimage under this encoding: v1, v2, v3, v4 or a full assay-evidence-vN line (default: the one the report binds)")
+	bundleOut := fs.String("bundle", "",
+		"also write an offline verification bundle (raw source bytes, report, preimage, digest) to this path")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -381,7 +390,25 @@ func runAttestation(args []string, d commandDeps) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	report, err := scanFuncFor(assetLists(), d)(ctx, asset)
+	scanFn := scanFuncFor(assetLists(), d)
+	finish := func() {}
+	recordingDir := ""
+	if *bundleOut != "" {
+		dir, err := os.MkdirTemp("", "assay-bundle-*")
+		if err != nil {
+			return fmt.Errorf("create bundle recording directory: %w", err)
+		}
+		defer os.RemoveAll(dir)
+		recordingDir = dir
+		// Record into a private directory first; the archive is written only
+		// after the report is derived, so a failed scan leaves no half bundle.
+		scanFn, finish, err = scanFuncForRecording(assetLists(), d, recordingDir, "")
+		if err != nil {
+			return err
+		}
+	}
+
+	report, err := scanFn(ctx, asset)
 	if err != nil {
 		return err
 	}
@@ -391,6 +418,17 @@ func runAttestation(args []string, d commandDeps) error {
 	params, err := attest.FromReportAs(report, *preimageVersion)
 	if err != nil {
 		return err
+	}
+
+	if *bundleOut != "" {
+		// Close the recording before packaging: the manifest and bodies are
+		// written by Close, and a bundle built from a still-open recorder would
+		// be missing every response.
+		finish()
+		if err := bundle.Write(*bundleOut, report, params, recordingDir); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(d.stderr, "assay: wrote verification bundle %s\n", *bundleOut)
 	}
 
 	if *raw {
