@@ -312,7 +312,7 @@ func runVerify(args []string) error {
 	bundlePath := fs.String("bundle", "",
 		"verify an offline attestation bundle instead of a live scan (cannot be combined with -max-age)")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return fmt.Errorf("verify: %w", err)
 	}
 	if *bundlePath != "" {
 		if fs.NArg() != 0 {
@@ -340,7 +340,7 @@ func runVerify(args []string) error {
 	}
 	asset, err := scan.ParseAsset(fs.Arg(0))
 	if err != nil {
-		return err
+		return fmt.Errorf("verify: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -359,7 +359,7 @@ func runVerify(args []string) error {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(res); err != nil {
-			return err
+			return fmt.Errorf("verify: write: %w", err)
 		}
 	} else {
 		fmt.Printf("%s: %s\n", strings.ToUpper(string(res.Outcome)), res.Asset)

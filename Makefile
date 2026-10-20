@@ -43,7 +43,7 @@ build-release:
 	CGO_ENABLED=0 go build -trimpath -buildvcs=false -o $(BINARY) ./cmd/assay
 
 test:
-	go test -race $(PKG)
+	go test -race -shuffle=on $(PKG)
 
 # test-notify exercises scripts/notify-scheduled-failure.sh against a stubbed
 # gh, covering open/update/comment/close and the "exactly one issue" rule. CI

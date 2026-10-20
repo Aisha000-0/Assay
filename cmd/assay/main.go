@@ -208,14 +208,14 @@ func runScan(args []string, d commandDeps) error {
 	replayDir := fs.String("replay", "",
 		"serve every upstream response from a recording made with -record")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return fmt.Errorf("scan: %w", err)
 	}
 	if fs.NArg() != 1 {
 		return fmt.Errorf("scan takes exactly one asset (CODE-ISSUER)")
 	}
 	asset, err := scan.ParseAsset(fs.Arg(0))
 	if err != nil {
-		return err
+		return fmt.Errorf("scan: %w", err)
 	}
 	if *recordDir != "" && *replayDir != "" {
 		return fmt.Errorf("-record and -replay are mutually exclusive")
@@ -239,7 +239,10 @@ func runScan(args []string, d commandDeps) error {
 
 	enc := json.NewEncoder(d.stdout)
 	enc.SetIndent("", "  ")
-	return enc.Encode(report)
+	if err := enc.Encode(report); err != nil {
+		return fmt.Errorf("scan: write report: %w", err)
+	}
+	return nil
 }
 
 // scanFuncForRecording returns the scan function for the scanning subcommands
@@ -259,7 +262,7 @@ func scanFuncForRecording(lists []string, d commandDeps, recordDir, replayDir st
 	if recordDir != "" {
 		rec, err := replay.NewRecorder(recordDir, scanner.Horizon.HTTP.Transport)
 		if err != nil {
-			return nil, func() {}, err
+			return nil, func() {}, fmt.Errorf("record: %w", err)
 		}
 		wireTransport(scanner, rec)
 		return scanner.Scan, func() {
@@ -275,7 +278,7 @@ func scanFuncForRecording(lists []string, d commandDeps, recordDir, replayDir st
 
 	rp, err := replay.NewReplayer(replayDir)
 	if err != nil {
-		return nil, func() {}, err
+		return nil, func() {}, fmt.Errorf("replay: %w", err)
 	}
 	wireTransport(scanner, rp)
 	return scanner.Scan, func() {}, nil
@@ -369,7 +372,7 @@ func runAttestation(args []string, d commandDeps) error {
 	bundleOut := fs.String("bundle", "",
 		"also write an offline verification bundle (raw source bytes, report, preimage, digest) to this path")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return fmt.Errorf("attestation: %w", err)
 	}
 	if fs.NArg() != 1 {
 		return fmt.Errorf("attestation takes exactly one asset (CODE-ISSUER)")
@@ -379,12 +382,12 @@ func runAttestation(args []string, d commandDeps) error {
 	// fetch and muddy the error.
 	if *preimageVersion != "" {
 		if _, err := attest.NormalizePreimageVersion(*preimageVersion); err != nil {
-			return err
+			return fmt.Errorf("attestation: %w", err)
 		}
 	}
 	asset, err := scan.ParseAsset(fs.Arg(0))
 	if err != nil {
-		return err
+		return fmt.Errorf("attestation: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -417,7 +420,7 @@ func runAttestation(args []string, d commandDeps) error {
 	// mistake for values.
 	params, err := attest.FromReportAs(report, *preimageVersion)
 	if err != nil {
-		return err
+		return fmt.Errorf("attestation: %w", err)
 	}
 
 	if *bundleOut != "" {
@@ -439,16 +442,20 @@ func runAttestation(args []string, d commandDeps) error {
 		// recorded hash) apart from "the recorded hash belongs to another
 		// encoding" (only the current rendering matches it).
 		if *preimageVersion == "" {
-			_, err := fmt.Fprintf(d.stdout, "%d\t%d\t%s\n", params.Severity, params.Flags, params.EvidenceHash)
-			return err
+			if _, err := fmt.Fprintf(d.stdout, "%d\t%d\t%s\n", params.Severity, params.Flags, params.EvidenceHash); err != nil {
+				return fmt.Errorf("attestation: write: %w", err)
+			}
+			return nil
 		}
 		current, err := attest.FromReport(report)
 		if err != nil {
-			return err
+			return fmt.Errorf("attestation: %w", err)
 		}
-		_, err = fmt.Fprintf(d.stdout, "%d\t%d\t%s\t%s\n",
-			params.Severity, params.Flags, params.EvidenceHash, current.EvidenceHash)
-		return err
+		if _, err := fmt.Fprintf(d.stdout, "%d\t%d\t%s\t%s\n",
+			params.Severity, params.Flags, params.EvidenceHash, current.EvidenceHash); err != nil {
+			return fmt.Errorf("attestation: write: %w", err)
+		}
+		return nil
 	}
 	if !*preimage {
 		params.Preimage = ""
@@ -456,7 +463,10 @@ func runAttestation(args []string, d commandDeps) error {
 
 	enc := json.NewEncoder(d.stdout)
 	enc.SetIndent("", "  ")
-	return enc.Encode(params)
+	if err := enc.Encode(params); err != nil {
+		return fmt.Errorf("attestation: write: %w", err)
+	}
+	return nil
 }
 
 func runHistory(args []string, d commandDeps) error {
@@ -465,7 +475,7 @@ func runHistory(args []string, d commandDeps) error {
 	guarantee := fs.Bool("guarantee", false, "exit non-zero when there is no history")
 	raw := fs.Bool("raw", false, "print only the history, tab-separated, for scripting")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return fmt.Errorf("history: %w", err)
 	}
 	if fs.NArg() != 1 {
 		return fmt.Errorf("history takes exactly one asset (CODE-ISSUER)")
@@ -473,7 +483,7 @@ func runHistory(args []string, d commandDeps) error {
 
 	asset, err := scan.ParseAsset(fs.Arg(0))
 	if err != nil {
-		return err
+		return fmt.Errorf("history: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -504,7 +514,10 @@ func runHistory(args []string, d commandDeps) error {
 
 	enc := json.NewEncoder(d.stdout)
 	enc.SetIndent("", "  ")
-	return enc.Encode(hist)
+	if err := enc.Encode(hist); err != nil {
+		return fmt.Errorf("history: write: %w", err)
+	}
+	return nil
 }
 
 // history extracts the observation history from a report. The observations are
@@ -574,7 +587,7 @@ func runServe(args []string, log *slog.Logger) error {
 	historyPath := fs.String("history", "",
 		"path to the observation history log (JSON Lines); empty keeps history in memory only")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return fmt.Errorf("serve: %w", err)
 	}
 
 	// The server is where a list configuration matters most: every scan it
@@ -585,7 +598,7 @@ func runServe(args []string, log *slog.Logger) error {
 	if *historyPath != "" {
 		store, err := historystore.Open(*historyPath)
 		if err != nil {
-			return err
+			return fmt.Errorf("serve: history: %w", err)
 		}
 		srv.History = store
 	}
@@ -616,6 +629,9 @@ func runServe(args []string, log *slog.Logger) error {
 		log.Info("shutting down server gracefully")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		return httpSrv.Shutdown(shutdownCtx)
+		if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("serve: shutdown: %w", err)
+		}
+		return nil
 	}
 }
