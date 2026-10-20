@@ -1375,112 +1375,81 @@ fn attestations_survive_admin_transfer_and_follow_the_new_admin() {
     assert!(client.get_safety(&other).is_some());
 }
 
-/// A cancellation removes the pending proposal and publishes exactly one
-/// event naming the withdrawn address. The admin is unchanged by it.
+/// Only the current admin may nominate a successor. The `MockAuth` grants the
+/// intruder authorization for this very call, so the rejection below is the
+/// contract's `require_auth` on the stored admin and not an artefact of the
+/// harness — without it (mutation R-M6) the call succeeds.
+///
+/// The probe after the rejection is what makes the state observable: if the
+/// nomination had landed, `accept_admin` would promote the proposed address,
+/// so a refusal with `NoPendingAdmin` proves nothing was written. This test
+/// also keeps `transfer_admin` honest about its caller in a way the happy-path
+/// transfer in `attestations_survive_admin_transfer_and_follow_the_new_admin`
+/// cannot: that test mocks auth for the admin, and an entrypoint with
+/// `require_auth` deleted passes it unchanged.
 #[test]
-fn cancel_admin_transfer_clears_pending_and_emits_event() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let contract_id = env.register(SafetyRegistry, ());
-    let client = SafetyRegistryClient::new(&env, &contract_id);
-    let admin = Address::generate(&env);
-    let pending = Address::generate(&env);
-    client.init(&admin);
-    client.transfer_admin(&pending);
-
-    env.ledger().set_timestamp(4_321);
-    client.cancel_admin_transfer();
-
-    let mut data = Map::<Symbol, soroban_sdk::Val>::new(&env);
-    data.set(Symbol::new(&env, "cancelled_at"), 4_321u64.into_val(&env));
-    assert_eq!(
-        env.events().all().filter_by_contract(&client.address),
-        vec![
-            &env,
-            (
-                client.address.clone(),
-                (Symbol::new(&env, "cancel_admin"), pending.clone()).into_val(&env),
-                data.into_val(&env),
-            ),
-        ],
-    );
-
-    let stored_admin: Address = env.as_contract(&client.address, || {
-        env.storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .expect("the admin must be unchanged")
-    });
-    assert_eq!(stored_admin, admin);
-    let stored_pending: Option<Address> = env.as_contract(&client.address, || {
-        env.storage().instance().get(&DataKey::PendingAdmin)
-    });
-    assert_eq!(stored_pending, None);
-
-    let err = client
-        .try_accept_admin()
-        .expect_err("the cancelled proposal must not be acceptable");
-    assert_eq!(err, Ok(Error::NoPendingAdmin));
-}
-
-/// Cancelling with nothing pending is an error, not a silent no-op, and
-/// publishes nothing.
-#[test]
-fn cancel_admin_transfer_without_pending_returns_no_pending_admin() {
+fn transfer_admin_rejects_unauthorized_caller() {
     let env = Env::default();
     let contract_id = env.register(SafetyRegistry, ());
     let client = SafetyRegistryClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     client.init(&admin);
 
+    let intruder = Address::generate(&env);
+    let proposed = Address::generate(&env);
+
     let err = client
-        .try_cancel_admin_transfer()
-        .expect_err("there is no pending transfer to cancel");
-    assert_eq!(err, Ok(Error::NoPendingAdmin));
-    assert_eq!(
-        env.events().all().filter_by_contract(&client.address),
-        vec![&env, /* empty: a failed cancel must not emit an event */],
-    );
-}
-
-/// Only the current admin can cancel, not the address that happens to be
-/// pending. A rejected cancel leaves the proposal in place.
-#[test]
-fn cancel_admin_transfer_requires_the_current_admin() {
-    let env = Env::default();
-    let contract_id = env.register(SafetyRegistry, ());
-    let client = SafetyRegistryClient::new(&env, &contract_id);
-    let a = Address::generate(&env);
-    let b = Address::generate(&env);
-    client.init(&a);
-
-    macro_rules! as_admin {
-        ($who:expr, $fn_name:expr, $args:expr) => {
-            client.mock_auths(&[MockAuth {
-                address: $who,
-                invoke: &MockAuthInvoke {
-                    contract: &contract_id,
-                    fn_name: $fn_name,
-                    args: $args.into_val(&env),
-                    sub_invokes: &[],
-                },
-            }])
-        };
-    }
-
-    as_admin!(&a, "transfer_admin", (&b,)).transfer_admin(&b);
-
-    let err = as_admin!(&b, "cancel_admin_transfer", ())
-        .try_cancel_admin_transfer()
-        .expect_err("the pending admin must not cancel its own proposal");
+        .mock_auths(&[MockAuth {
+            address: &intruder,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "transfer_admin",
+                args: (&proposed,).into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .try_transfer_admin(&proposed)
+        .expect_err("a non-admin must not nominate a pending admin");
+    // As in `revoke_rejects_unauthorized_caller`, the rejection is the host's
+    // auth error rather than a contract `Error`; what matters is that it is one.
     assert!(err.is_err());
 
-    // The proposal survives the rejected cancel, and the real admin can still
-    // withdraw it.
-    as_admin!(&a, "cancel_admin_transfer", ()).cancel_admin_transfer();
-    let err = as_admin!(&b, "accept_admin", ())
+    // Nothing was written: there is no pending nomination to accept.
+    env.mock_all_auths();
+    let err = client
         .try_accept_admin()
-        .expect_err("the cancelled proposal must not be acceptable");
+        .expect_err("the rejected nomination must leave no pending admin");
+    assert_eq!(err, Ok(Error::NoPendingAdmin));
+}
+
+/// A completed transfer consumes the pending nomination. After `accept_admin`,
+/// a replay — by the new admin or anyone holding their key — must fail with
+/// `NoPendingAdmin` instead of re-running the promotion: an accepted
+/// nomination is gone, not merely superseded. Removing the cleanup
+/// (mutation R-M7) leaves the pending address set, and the replay below
+/// succeeds instead of failing.
+#[test]
+fn accept_admin_consumes_the_pending_nomination() {
+    let (env, client, _admin) = setup();
+    let successor = Address::generate(&env);
+
+    client.transfer_admin(&successor);
+    client.accept_admin();
+
+    // The promotion happened and the nomination it consumed is gone.
+    let err = client
+        .try_accept_admin()
+        .expect_err("a pending nomination must not survive its own acceptance");
+    assert_eq!(err, Ok(Error::NoPendingAdmin));
+
+    // The slot is reusable: a later nomination is written, consumed, and
+    // consumed only once, so the cleanup is not "remove on first transfer".
+    let later = Address::generate(&env);
+    client.transfer_admin(&later);
+    client.accept_admin();
+    let err = client
+        .try_accept_admin()
+        .expect_err("the second nomination must be consumed by its acceptance");
     assert_eq!(err, Ok(Error::NoPendingAdmin));
 }
 
