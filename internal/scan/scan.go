@@ -470,11 +470,26 @@ func (s *Scanner) Subject(ctx context.Context, a mechanics.Asset) (*mechanics.Su
 
 // Scan fetches and classifies an asset.
 func (s *Scanner) Scan(ctx context.Context, a mechanics.Asset) (*mechanics.Report, error) {
+	rep, _, err := s.ScanWithSubject(ctx, a)
+	return rep, err
+}
+
+// ScanWithSubject fetches and classifies an asset, returning both the report
+// and the Subject it was built from.
+//
+// The Subject is the scanner's own primary reading — the two Horizon flag
+// copies the differential check compares against a second ledger route. A
+// caller that only needs the report should use Scan; this exists so a
+// verification that also performs the differential read does not fetch the
+// asset twice and cannot compare the independent reading against a different
+// snapshot than the one the report describes.
+func (s *Scanner) ScanWithSubject(ctx context.Context, a mechanics.Asset) (*mechanics.Report, *mechanics.Subject, error) {
 	sub, err := s.Subject(ctx, a)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return bindScanner(s.Engine.Run(ctx, sub))
+	rep, err := bindScanner(s.Engine.Run(ctx, sub))
+	return rep, sub, err
 }
 
 // bindScanner marks a report produced by a real scan as scanner-bound, so its
