@@ -105,7 +105,10 @@ jobs:
   # only, no race detector, no coverage, no matrix for the rest of the module.
   # Explicit versions rather than `stable`: setup-go resolves `stable` to a
   # moving target, which is the same trap the main job's go-version-file pin
-  # avoids for golangci-lint.
+  # avoids for golangci-lint. The `1.26.x` leg uses check-latest below: the
+  # hosted runner cache can otherwise keep serving an older patch (1.26.9)
+  # after the floor in go.mod moves to a newer one (1.26.10), which would make
+  # this leg test a toolchain that cannot even build the module.
   attest-reproducibility:
     name: attest on Go ${{ matrix.go-version }}
     runs-on: ubuntu-latest
@@ -119,6 +122,7 @@ jobs:
       - uses: actions/setup-go@v7.0.0
         with:
           go-version: ${{ matrix.go-version }}
+          check-latest: true
           cache: true
 
       # Pure functions over committed fixtures under internal/attest/testdata:
