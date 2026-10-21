@@ -271,7 +271,11 @@ func (tr *goldenSingleHostTransport) RoundTrip(req *http.Request) (*http.Respons
 	u.Scheme = "http"
 	u.Host = tr.host
 	req.URL = &u
-	return http.DefaultTransport.RoundTrip(req)
+	resp, err := http.DefaultTransport.RoundTrip(req)
+	if err != nil {
+		return nil, fmt.Errorf("round trip: %w", err)
+	}
+	return resp, nil
 }
 
 func readGoldenFixture(t *testing.T, path string) []byte {
