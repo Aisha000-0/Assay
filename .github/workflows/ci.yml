@@ -119,6 +119,7 @@ jobs:
       - uses: actions/setup-go@v7.0.0
         with:
           go-version: ${{ matrix.go-version }}
+          check-latest: true
           cache: true
 
       # Pure functions over committed fixtures under internal/attest/testdata:
