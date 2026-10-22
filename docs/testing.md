@@ -1,6 +1,6 @@
 # Package-level testing guide
 
-Go tests require Go 1.26.9 or later. The `go` directive in `go.mod` is
+Go tests require Go 1.26.10 or later. The `go` directive in `go.mod` is
 the source of truth for the minimum version. CI also runs the attestation
 golden-file tests on Go 1.26.x and 1.27.x.
 
@@ -101,11 +101,13 @@ mechanic, and you need to pin its *judgment* on real assets.
 
 The eval is `TestEval` (aggregate) and `TestEvalPerCheck` (per check) in
 [`internal/mechanics/eval_test.go`](../internal/mechanics/eval_test.go). Both
-iterate `eval.Corpus()` and rebuild each subject with `eval.LoadSubject`, which
+iterate the corpus `eval.Corpus` loads from each subject's `metadata.json` and
+rebuild each subject with `eval.LoadSubject`, which
 decodes files under `internal/mechanics/testdata/<case-name>/` using the same
 decoders as the live fetchers. A fixture that parses in the test is therefore
 one the real client would have accepted. The labels and their rationale live in
-one place — [`internal/eval`](../internal/eval) and
+one place — the metadata files beside the fixtures, loaded by
+[`internal/eval`](../internal/eval) and documented in
 [docs/eval.md](eval.md) — so the aggregate and per-check expectations cannot
 describe different runs.
 
@@ -190,9 +192,10 @@ make lint    # golangci-lint
 make fmt     # gofmt -w .
 ```
 
-Use the Go version named in `go.mod` (**1.26.9**): every CI job pins to it via
+Use the Go version named in `go.mod` (**1.26.10**): every CI job pins to it via
 `go-version-file`, and the floor was raised there to clear the reachable
-`net/http` advisories that fail `govulncheck` on older standard libraries. A
+`net/http` and `crypto/x509` advisories that fail `govulncheck` on older
+standard libraries. A
 toolchain above the floor is fine — `attest-reproducibility` runs the golden
 preimage tests on `1.26.x` and `1.27.x` — but a toolchain below it cannot build
 the module. See [CONTRIBUTING.md](../CONTRIBUTING.md#go-toolchain).
