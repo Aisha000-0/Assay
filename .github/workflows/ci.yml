@@ -54,6 +54,9 @@ jobs:
       - name: test reproducibility script
         run: make test-reproducibility
 
+      - name: test Stellar CLI version guard
+        run: make test-stellar-cli-version
+
       # Tests must pass without network access: every check is a pure function
       # over fixtures captured under internal/*/testdata.
       #
