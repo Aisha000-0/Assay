@@ -125,7 +125,7 @@ build-contract:
 # source. See docs/deployment.md ("Does the source still build what is
 # deployed?").
 verify-wasm:
-	./scripts/verify-wasm-source.sh
+	./scripts/verify-wasm-source.sh $(if $(SOURCE_REF),--source-ref "$(SOURCE_REF)",)
 
 deploy-testnet: build-contract
 	stellar contract deploy --wasm $(WASM) \
