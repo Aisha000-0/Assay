@@ -18,7 +18,7 @@ anyone should rely on the registry for value.
 
 The actors, their capabilities and the admitted gaps are set out in
 [threat-model.md](threat-model.md) (#30; the writer design refers to the same
-work as [#52](https://github.com/use-assay/Assay/issues/52)). The relevant part
+work as [#30](https://github.com/use-assay/Assay/issues/30)). The relevant part
 — and the whole reason a threshold is on the roadmap — is attack class 1 there:
 a compromised attester can cause an **admission**, which is the only failure
 direction that puts funds at risk. The pipeline-document version of the same
@@ -175,7 +175,7 @@ raised, never lowered.
 - **Trust assumption:** that the attestors a consumer names are operated
   independently: different operators, different machines and keys, and ideally
   different scanner builds, since a shared scanner bug is a common-mode failure
-  a threshold cannot catch ([#54](https://github.com/use-assay/Assay/issues/54)).
+  a threshold cannot catch ([#104](https://github.com/use-assay/Assay/issues/104)).
   There is no governance key. Nobody can change a consumer's attestor set but
   the consumer.
 - **What one compromised attestor can do:** under conservative aggregation it
