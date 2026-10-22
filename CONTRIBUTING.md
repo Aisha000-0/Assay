@@ -155,12 +155,12 @@ Check the environment before any contract work:
 stellar --version && rustup target list --installed && make build-contract
 ```
 
-`stellar --version` must print 27.1.0 and the target list must contain
-`wasm32v1-none`; `make build-contract` then writes the optimized wasm to
-`assay-contracts/out/`. A mismatch on any of the three changes the optimized
-bytes, and therefore the hash, even when the contract source is byte for byte
-identical — the CLI also runs the wasm optimizer and checks the exported
-interface, so it is not a pass-through to `cargo build`. If
+`stellar --version` must match `STELLAR_CLI_VERSION` in the Makefile. The target
+list must contain `wasm32v1-none`; `make build-contract` then writes the
+optimized wasm to `assay-contracts/out/`. A mismatch on any of the three changes
+the optimized bytes, and therefore the hash, even when the contract source is
+byte for byte identical — the CLI also runs the wasm optimizer and checks the
+exported interface, so it is not a pass-through to `cargo build`. If
 `sha256sum assay-contracts/out/assay_safety_registry.wasm` does not match the
 [recorded wasm hash](docs/deployment.md#live-addresses), check these versions
 before suspecting a source change — and note that a mismatch is only evidence
